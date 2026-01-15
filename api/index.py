@@ -5,7 +5,7 @@ from flask import Flask, request
 # Config
 TOKEN = os.getenv("BOT_TOKEN")  # @tybot ka token
 MY_ID = "7844485105"                 # Aapki ID
-NICK_BOT_USER = "nickbot"       # Jis bot ko bhejna hai
+NICK_BOT_USER = "@Nick_Bypass_Bot"       # Jis bot ko bhejna hai
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
