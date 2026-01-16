@@ -19,13 +19,10 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
-async def get_and_animate(chat_id, message_id, user_msg_url):
+async def process_bypass(chat_id, message_id, user_msg_url):
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     
-    # 1. Start background connection and send to Nick Bot IMMEDIATELY
-    conn_task = asyncio.create_task(client.start())
-    
-    # 2. Parallelly send the initial processing message
+    # 1. Sabse pehle Processing message bhej do
     resp = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={
         "chat_id": chat_id,
         "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
@@ -36,12 +33,11 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
     p_id = resp.get("result", {}).get("message_id")
 
     try:
-        await conn_task # Ensure client is started
+        await client.start()
         async with client.conversation(TARGET_BOT, timeout=30) as conv:
-            # INSTANT SEND TO NICK
-            send_task = asyncio.create_task(conv.send_message(user_msg_url))
+            # 2. Nick Bot ko message bhejo turant
+            await conv.send_message(user_msg_url)
             
-            # Update animation to Extracting while Nick is working
             if p_id:
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                     "chat_id": chat_id, "message_id": p_id,
@@ -49,15 +45,15 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                     "parse_mode": "Markdown"
                 })
 
-            await send_task
-            await conv.get_response() # Skip Processing msg from Nick
-            response = await conv.get_response() # Link msg
+            # Nick Bot ke response ka wait karo
+            await conv.get_response() # Processing msg skip
+            response = await conv.get_response() # Final link msg
             raw_text = response.text
 
             all_urls = re.findall(r'https?://[^\s]+', raw_text)
             
             if len(all_urls) >= 2:
-                # Instant Completed status
+                # Completed status
                 if p_id:
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                         "chat_id": chat_id, "message_id": p_id,
@@ -73,6 +69,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
             else:
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
 
+            # Final Result display
             if p_id:
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                     "chat_id": chat_id, "message_id": p_id,
@@ -94,19 +91,28 @@ def webhook():
     message = data.get("message") or data.get("edited_message")
     
     if message and "text" in message:
-        chat_id, text, mid = message["chat"]["id"], message["text"], message["message_id"]
+        chat_id = message["chat"]["id"]
+        text = message["text"]
+        mid = message["message_id"]
 
         if text.startswith("/start"):
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                          json={"chat_id": chat_id, "text": "✅ Bot is Ready!"})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
-            # We use ensure_future to not block the webhook response
-            asyncio.ensure_future(get_and_animate(chat_id, mid, urls[0]))
+            # Vercel fix: background task start karne ke liye
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            loop.create_task(process_bypass(chat_id, mid, urls[0]))
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Superfast Animation Bot is Live!"
+    return "Bot is Alive and Fast!"
