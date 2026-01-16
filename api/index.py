@@ -94,7 +94,7 @@ def webhook():
         chat_id, text, mid = message["chat"]["id"], message["text"], message["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "🚀 **Superfast Bypass Bot Active!**"})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "🚀 ✅ Bot Active! Send a link."})
             return "ok", 200
 
         # Link detect karega message me kahin bhi ho
