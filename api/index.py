@@ -28,7 +28,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
     # Initial Message: 20%
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
-        "text": f"⏳ **Processing...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -55,7 +55,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
                 })
 
             try:
