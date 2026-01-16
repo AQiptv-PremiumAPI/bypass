@@ -6,38 +6,48 @@ import requests
 
 app = Flask(__name__)
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 API_ID = 39707299 
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 BOT_TOKEN = '8374143251:AAGY5_QfDcr_PZ2b2zAoD8WMbXr1Hubm-jw'
+# Aapka String Session
 STRING_SESSION = "1BVtsOIMBuxpEfQxpdroVzE6VZ3Z7ZXSgZU5C3rCDrmwMpnHDnMdZdHLQF80003Ysr1AvMkSy5dlle0OO7RZTLQIQnEza9XasCzpv8rrhYcaf0QGyIKf_COX-GKdedv_4XXFLlbyufhZAfeVjJyZNCG9VP0ex_fh9uek-R9ExQn7qxfbBbr0ONLYcV-32qX68ljBYclI8QiqIutqNvlSP9vnEdqEoD-Uhfe7XdVukMc8bKJNG4kWl6E7BjOOtuZHpvfShDMXFaZCTcq8mw1ela4UzSNxfTnk-GT_tZTH288X_TZUGtVvPUsdWrKkTEUhHclgn_F7HrNwxzCVylTCw47C5XDVEbnA=" 
 TARGET_BOT = "@nick_bypass_bot"
 
 async def get_final_reply(user_msg):
+    # Aapki ID se login karna (StringSession)
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     await client.start()
     
     final_text = ""
     try:
-        async with client.conversation(TARGET_BOT, timeout=40) as conv:
+        async with client.conversation(TARGET_BOT, timeout=45) as conv:
+            # Nick bot ko message bhejna
             await conv.send_message(user_msg)
             
-            # 1. Pehla message (e.g. "Processing...")
+            # Pehla response pakadna (Processing...)
             response = await conv.get_response()
             final_text = response.text
             
-            # 2. YAHAN JADU HAI: Hum 5-8 second wait karenge jab tak bot asli link na bhej de
-            # Agar bot message edit karta hai ya naya bhejta hai toh ye usse pakad lega
+            # Dusra response pakadna (Asli Bypass Link)
             try:
-                # Nick bot thoda time leta hai, isliye hum next message ka wait karenge
+                # 15 second tak wait karega asli link ke liye
                 response = await conv.get_response(timeout=15)
                 final_text = response.text
             except:
-                # Agar naya message nahi aaya, toh ho sakta hai purana wala hi final ho
+                # Agar dusra message nahi aaya toh pehla wala hi rakhega
                 pass
+
+            # --- BRANDING REMOVAL LOGIC ---
+            if final_text:
+                # Purane naam ko naye naam se replace karna
+                final_text = final_text.replace("@Nick_Bypass_Bot", "@sandi_bypass_bot")
+                final_text = final_text.replace("@nick_bypass_bot", "@sandi_bypass_bot")
+                final_text = final_text.replace("Nick Bypass Bot", "Sandi Bypass Bot")
+                final_text = final_text.replace("Nick Bypass", "Sandi Bypass")
                 
     except Exception as e:
-        final_text = f"Error: {str(e)}"
+        final_text = f"⚠️ Error: {str(e)}"
     finally:
         await client.disconnect()
     
@@ -50,28 +60,29 @@ def webhook():
         chat_id = data["message"]["chat"]["id"]
         user_msg = data["message"]["text"]
 
+        # Start Command Handling
         if user_msg == "/start":
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": chat_id, "text": "Bot Active! Link bhejiye, main Nick Bot se nikal kar deta hoon..."})
+                          json={"chat_id": chat_id, "text": "✅ *Bot Active!*\n\nLink bhejiye, main usse bypass karke deta hoon.", "parse_mode": "Markdown"})
             return "ok", 200
 
-        # Vercel ko reply dene ke liye pehle bata dete hain ki hum kaam kar rahe hain
+        # Nick Bot se link nikalne ka process
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         try:
-            # Final reply mangwana (Wait logic ke saath)
+            # Nick bot se reply lena aur edit karna
             nick_reply = loop.run_until_complete(get_final_reply(user_msg))
             
-            # User ko asli result bhejna
+            # User ko modified reply bhejna
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
                           json={"chat_id": chat_id, "text": nick_reply})
         except:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": chat_id, "text": "Nick Bot ne reply dene mein zyada time le liya. Dubara try karein."})
+                          json={"chat_id": chat_id, "text": "❌ Nick Bot ne respond nahi kiya. Thodi der baad try karein."})
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Userbot Middleman is Active!"
+    return "Bot is Running with Branding Replacement!"
