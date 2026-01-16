@@ -23,27 +23,28 @@ async def get_final_reply(user_msg):
         async with client.conversation(TARGET_BOT, timeout=45) as conv:
             await conv.send_message(user_msg)
             
-            # Pehla response
+            # Pehla response skip (Processing वाला)
             response = await conv.get_response()
             
-            # Dusra response (Actual Bypass Link)
+            # Dusra response jisme link hota hai
             try:
                 response = await conv.get_response(timeout=15)
                 raw_text = response.text
             except:
                 raw_text = response.text
 
-            # --- LINK EXTRACTION & FORMATTING ---
-            # Original Link nikalne ke liye
-            orig_match = re.search(r'Original Link\s*:\s*┖\s*(https?://[^\s]+)', raw_text)
-            # Bypassed Link nikalne ke liye
-            bypass_match = re.search(r'Bypassed Link\s*:\s*┖\s*(https?://[^\s]+)', raw_text)
+            # --- ADVANCED URL EXTRACTION ---
+            # Hum saare links nikal rahe hain jo message mein hain
+            all_urls = re.findall(r'https?://[^\s]+', raw_text)
 
-            if orig_match and bypass_match:
-                original_url = orig_match.group(1)
-                bypassed_url = bypass_match.group(1)
+            # Nick bot ke message mein:
+            # 1st URL hamesha Original Link hota hai
+            # 2nd URL hamesha Bypassed Link hota hai
+            if len(all_urls) >= 2:
+                original_url = all_urls[0]
+                bypassed_url = all_urls[1]
                 
-                # Aapka bataya hua format
+                # AAPKA DESIRED FORMAT
                 final_text = (
                     "✅ **BYPASSED!**\n\n"
                     "**ORIGINAL LINK:**\n"
@@ -52,8 +53,8 @@ async def get_final_reply(user_msg):
                     f"{bypassed_url}"
                 )
             else:
-                # Agar regex match na ho toh purana method (Branding change)
-                final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandi_bypass_bot")
+                # Agar 2 links nahi mile, toh branding badal ke bhej do
+                final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
                 final_text = final_text.replace("Nick Bypass", "Sandi Bypass")
                 
     except Exception as e:
@@ -72,31 +73,22 @@ def webhook():
         user_msg = message["text"]
         message_id = message["message_id"]
 
-        # 1. Start Command
         if user_msg.startswith("/start"):
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={
-                              "chat_id": chat_id, 
-                              "text": "✅ *Bot Active!*\n\nSirf `http://` ya `https://` wale links bhejiye.", 
-                              "reply_to_message_id": message_id,
-                              "parse_mode": "Markdown"
-                          })
+                          json={"chat_id": chat_id, "text": "✅ Bot Active! Link bhejiye.", "reply_to_message_id": message_id})
             return "ok", 200
 
-        # 2. URL FILTER
-        # Check if message contains a link
-        urls = re.findall(r'(https?://[^\s]+)', user_msg)
-        if not urls:
+        # Message se URL dhundna
+        user_urls = re.findall(r'https?://[^\s]+', user_msg)
+        if not user_urls:
             return "ok", 200
 
-        # 3. Processing
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         try:
-            formatted_reply = loop.run_until_complete(get_final_reply(urls[0]))
+            formatted_reply = loop.run_until_complete(get_final_reply(user_urls[0]))
             
-            # 4. Reply with New Format
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
                           json={
                               "chat_id": chat_id, 
@@ -112,4 +104,4 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Custom Formatter Bot is Running!"
+    return "Format Fixed Bot is Running!"
