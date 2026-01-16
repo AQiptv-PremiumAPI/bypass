@@ -18,61 +18,34 @@ def bot_request(method, payload):
     return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload)
 
 def get_progress_bar(percent):
-    # 10 boxes total: har box 10% represent karta hai
     done = int(percent / 10)
-    remain = 10 - done
-    bar = "■" * done + "□" * remain
+    bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
 async def get_and_animate(chat_id, message_id, user_msg_url):
-    # Initial Message: 10%
+    # FAST START: Ek hi baar 50% par message bhej dena
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
-        "text": f"⏳ **Processing...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Processing...**\n`{get_progress_bar(50)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
     
     processing_msg_id = resp.get("result", {}).get("message_id")
-
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-    await client.start()
     
     try:
-        async with client.conversation(TARGET_BOT, timeout=45) as conv:
+        await client.start()
+        async with client.conversation(TARGET_BOT, timeout=30) as conv:
             await conv.send_message(user_msg_url)
             
-            # Update to 40%
-            if processing_msg_id:
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
-                })
+            # Seedha response ka wait (Animation edits kam karne se speed badhti hai)
+            await conv.get_response() # Skip Processing msg
+            response = await conv.get_response() # Link msg
+            raw_text = response.text
 
-            await conv.get_response() # Skip first msg
-            
-            # Update to 70%
-            if processing_msg_id:
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
-                })
-
-            try:
-                response = await conv.get_response(timeout=15)
-                raw_text = response.text
-            except:
-                raw_text = "❌ Error: Nick Bot Timeout"
-
-            # Parsing Links
             all_urls = re.findall(r'https?://[^\s]+', raw_text)
             if len(all_urls) >= 2:
-                # 100% Update just before showing result
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
-                })
-                
                 final_text = (
                     "✅ **BYPASSED!**\n\n"
                     f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n"
@@ -81,12 +54,11 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
             else:
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
 
-            # Final Result
-            if processing_msg_id:
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
-                })
+            # Final response update seedha (No extra middle steps)
+            bot_request("editMessageText", {
+                "chat_id": chat_id, "message_id": processing_msg_id,
+                "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
+            })
                 
     except Exception as e:
         if processing_msg_id:
@@ -101,22 +73,19 @@ def webhook():
     data = request.get_json()
     if data and "message" in data and "text" in data["message"]:
         msg = data["message"]
-        chat_id = msg["chat"]["id"]
-        text = msg["text"]
-        mid = msg["message_id"]
+        chat_id, text, mid = msg["chat"]["id"], msg["text"], msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Superfast Active!"})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_and_animate(chat_id, mid, urls[0]))
+            # Threading ya background task ki tarah run karna speed ke liye zaroori hai
+            asyncio.run(get_and_animate(chat_id, mid, urls[0]))
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Progress Bar Bot is Online!"
+    return "Superfast Bot is Running!"
