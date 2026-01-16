@@ -3,6 +3,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 import asyncio
 import requests
+import re
 
 app = Flask(__name__)
 
@@ -20,25 +21,39 @@ async def get_final_reply(user_msg):
     final_text = ""
     try:
         async with client.conversation(TARGET_BOT, timeout=45) as conv:
-            # Nick bot ko link bhejna
             await conv.send_message(user_msg)
             
-            # Pehla msg (Processing...)
+            # Pehla response
             response = await conv.get_response()
             
-            # Dusra msg (As asli response)
+            # Dusra response (Actual Bypass Link)
             try:
-                # 15 second wait for actual link
                 response = await conv.get_response(timeout=15)
-                final_text = response.text
+                raw_text = response.text
             except:
-                final_text = response.text
+                raw_text = response.text
 
-            # --- BRANDING REPLACEMENT ---
-            # Jaisa msg Nick bot se aaya hai, waisa hi rahega bas naam badlega
-            if final_text:
-                final_text = final_text.replace("@Nick_Bypass_Bot", "@sandi_bypass_bot")
-                final_text = final_text.replace("@nick_bypass_bot", "@sandi_bypass_bot")
+            # --- LINK EXTRACTION & FORMATTING ---
+            # Original Link nikalne ke liye
+            orig_match = re.search(r'Original Link\s*:\s*┖\s*(https?://[^\s]+)', raw_text)
+            # Bypassed Link nikalne ke liye
+            bypass_match = re.search(r'Bypassed Link\s*:\s*┖\s*(https?://[^\s]+)', raw_text)
+
+            if orig_match and bypass_match:
+                original_url = orig_match.group(1)
+                bypassed_url = bypass_match.group(1)
+                
+                # Aapka bataya hua format
+                final_text = (
+                    "✅ **BYPASSED!**\n\n"
+                    "**ORIGINAL LINK:**\n"
+                    f"{original_url}\n\n"
+                    "**BYPASSED LINK:**\n"
+                    f"{bypassed_url}"
+                )
+            else:
+                # Agar regex match na ho toh purana method (Branding change)
+                final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandi_bypass_bot")
                 final_text = final_text.replace("Nick Bypass", "Sandi Bypass")
                 
     except Exception as e:
@@ -58,7 +73,7 @@ def webhook():
         message_id = message["message_id"]
 
         # 1. Start Command
-        if user_msg == "/start":
+        if user_msg.startswith("/start"):
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
                           json={
                               "chat_id": chat_id, 
@@ -68,8 +83,10 @@ def webhook():
                           })
             return "ok", 200
 
-        # 2. URL FILTER (Sirf link process hoga)
-        if not (user_msg.startswith("http://") or user_msg.startswith("https://")):
+        # 2. URL FILTER
+        # Check if message contains a link
+        urls = re.findall(r'(https?://[^\s]+)', user_msg)
+        if not urls:
             return "ok", 200
 
         # 3. Processing
@@ -77,20 +94,22 @@ def webhook():
         asyncio.set_event_loop(loop)
         
         try:
-            nick_reply = loop.run_until_complete(get_final_reply(user_msg))
+            formatted_reply = loop.run_until_complete(get_final_reply(urls[0]))
             
-            # 4. As it is Forward (with reply)
+            # 4. Reply with New Format
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
                           json={
                               "chat_id": chat_id, 
-                              "text": nick_reply,
-                              "reply_to_message_id": message_id
+                              "text": formatted_reply,
+                              "reply_to_message_id": message_id,
+                              "parse_mode": "Markdown",
+                              "disable_web_page_preview": True
                           })
         except:
-            pass # Vercel timeout handle karne ke liye
+            pass
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Bot is Running Perfectly!"
+    return "Custom Formatter Bot is Running!"
