@@ -65,7 +65,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                 raw_text = "❌ Error: Timeout"
 
             # Parsing Links
-            all_urls = re.findall(r'https?://[^\s┖│─]+', raw_text)
+            all_urls = re.findall(r'https?://[^\s]+', raw_text)
             if len(all_urls) >= 2:
                 # 100% Update just before showing result
                 bot_request("editMessageText", {
@@ -109,7 +109,7 @@ def webhook():
             bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
-        urls = re.findall(r'https?://[^\s┖│─]+', raw_text)
+        urls = re.findall(r'https?://[^\s]+', text)
         if urls:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -120,5 +120,4 @@ def webhook():
 @app.route('/')
 def home():
     return "Progress Bar Bot is Online!"
-
-                          
+                         
