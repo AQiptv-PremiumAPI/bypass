@@ -18,14 +18,12 @@ def bot_request(method, payload):
     return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload)
 
 def get_progress_bar(percent):
-    # 10 boxes total: har box 10% represent karta hai
     done = int(percent / 10)
     remain = 10 - done
     bar = "■" * done + "□" * remain
     return f"[{bar}] {percent}%"
 
 async def get_and_animate(chat_id, message_id, user_msg_url):
-    # Initial Message: 20%
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
         "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
@@ -34,40 +32,37 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
     }).json()
     
     processing_msg_id = resp.get("result", {}).get("message_id")
-
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     await client.start()
     
     try:
-        async with client.conversation(TARGET_BOT, timeout=45) as conv:
+        async with client.conversation(TARGET_BOT, timeout=60) as conv:
             await conv.send_message(user_msg_url)
             
-            # Update to 40%
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
                     "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
                 })
 
-            await conv.get_response() # Skip first msg
+            await conv.get_response() 
             
-            # Update to 80%
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
                     "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
                 })
 
-            try:
-                response = await conv.get_response(timeout=15)
-                raw_text = response.text
-            except:
-                raw_text = "❌ Error: Timeout"
+            response = await conv.get_response(timeout=20)
+            raw_text = response.text
 
-            # Parsing Links
-            all_urls = re.findall(r'https?://[^\s]+', raw_text)
+            # --- 🔥 UNIVERSAL LINK EXTRACTION FIX 🔥 ---
+            # Hum sirf 'http' se shuru hone wala text nikal rahe hain 
+            # aur symbols (┖, │, ─, whitespace) ko filter kar rahe hain.
+            # Ye regex lksfy aur mediafire dono ko perfect pakdega.
+            all_urls = re.findall(r'https?://[^\s┖│─╰╯]+', raw_text)
+
             if len(all_urls) >= 2:
-                # 100% Update just before showing result
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
                     "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
@@ -79,9 +74,9 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                     f"**BYPASSED LINK:**\n{all_urls[1]}"
                 )
             else:
+                # Agar tab bhi regex fail ho (kam chances hain), toh pura reply forward kardo
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
 
-            # Final Result
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
@@ -90,9 +85,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                 
     except Exception as e:
         if processing_msg_id:
-            bot_request("editMessageText", {
-                "chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"
-            })
+            bot_request("editMessageText", {"chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"})
     finally:
         await client.disconnect()
 
@@ -101,23 +94,22 @@ def webhook():
     data = request.get_json()
     if data and "message" in data and "text" in data["message"]:
         msg = data["message"]
-        chat_id = msg["chat"]["id"]
-        text = msg["text"]
-        mid = msg["message_id"]
+        chat_id, text, mid = msg["chat"]["id"], msg["text"], msg["message_id"]
 
         if text.startswith("/start"):
             bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
-        urls = re.findall(r'https?://[^\s]+', text)
+        # Input message se bhi saaf link uthane ke liye
+        urls = re.findall(r'https?://[^\s┖│─╰╯]+', text)
         if urls:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(get_and_animate(chat_id, mid, urls[0]))
+            loop.close()
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Progress Bar Bot is Online!"
-                         
+    return "Progress Bar Bot is Online with Universal Fix!"
