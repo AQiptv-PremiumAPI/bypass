@@ -23,7 +23,12 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * remain
     return f"[{bar}] {percent}%"
 
+def clean_url(url):
+    # Link ke aage peeche se symbols (┖, │, ─) aur extra kachra saaf karne ke liye
+    return re.sub(r'^[┖│─╰╯\s]+|[┖│─╰╯\s]+$', '', url)
+
 async def get_and_animate(chat_id, message_id, user_msg_url):
+    # Initial: 20%
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
         "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
@@ -31,7 +36,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
         "parse_mode": "Markdown"
     }).json()
     
-    processing_msg_id = resp.get("result", {}).get("message_id")
+    p_id = resp.get("result", {}).get("message_id")
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     await client.start()
     
@@ -39,53 +44,58 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
         async with client.conversation(TARGET_BOT, timeout=60) as conv:
             await conv.send_message(user_msg_url)
             
-            if processing_msg_id:
+            # Update: 40%
+            if p_id:
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "chat_id": chat_id, "message_id": p_id,
                     "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
                 })
 
-            await conv.get_response() 
+            await conv.get_response() # Nick Processing Msg
             
-            if processing_msg_id:
+            # Update: 80%
+            if p_id:
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "chat_id": chat_id, "message_id": p_id,
                     "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
                 })
 
-            response = await conv.get_response(timeout=20)
+            response = await conv.get_response(timeout=30)
             raw_text = response.text
 
-            # --- 🔥 UNIVERSAL LINK EXTRACTION FIX 🔥 ---
-            # Hum sirf 'http' se shuru hone wala text nikal rahe hain 
-            # aur symbols (┖, │, ─, whitespace) ko filter kar rahe hain.
-            # Ye regex lksfy aur mediafire dono ko perfect pakdega.
-            all_urls = re.findall(r'https?://[^\s┖│─╰╯]+', raw_text)
+            # 🔥 Sabse Solid Regex: Link ke beech ka kachra filter karke pure link uthayega
+            found_links = re.findall(r'https?://[^\s┖│─╰╯]+', raw_text)
 
-            if len(all_urls) >= 2:
+            if len(found_links) >= 2:
+                # Clean the links (Symbols hatane ke liye)
+                orig_link = clean_url(found_links[0])
+                bypass_link = clean_url(found_links[1])
+
+                # Update: 100%
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "chat_id": chat_id, "message_id": p_id,
                     "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
                 })
                 
                 final_text = (
                     "✅ **BYPASSED!**\n\n"
-                    f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n"
-                    f"**BYPASSED LINK:**\n{all_urls[1]}"
+                    f"**ORIGINAL LINK:**\n{orig_link}\n\n"
+                    f"**BYPASSED LINK:**\n{bypass_link}"
                 )
             else:
-                # Agar tab bhi regex fail ho (kam chances hain), toh pura reply forward kardo
+                # Agar regex fail ho toh purana text hi forward kardo
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
 
-            if processing_msg_id:
+            # Result edit
+            if p_id:
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "chat_id": chat_id, "message_id": p_id,
                     "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
                 })
                 
     except Exception as e:
-        if processing_msg_id:
-            bot_request("editMessageText", {"chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"})
+        if p_id:
+            bot_request("editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⚠️ Error: {str(e)}"})
     finally:
         await client.disconnect()
 
@@ -97,10 +107,10 @@ def webhook():
         chat_id, text, mid = msg["chat"]["id"], msg["text"], msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send any link."})
             return "ok", 200
 
-        # Input message se bhi saaf link uthane ke liye
+        # Link check
         urls = re.findall(r'https?://[^\s┖│─╰╯]+', text)
         if urls:
             loop = asyncio.new_event_loop()
@@ -112,4 +122,4 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Progress Bar Bot is Online with Universal Fix!"
+    return "Universal Bypass Bot is Online!"
