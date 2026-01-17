@@ -17,38 +17,82 @@ TARGET_BOT = "@nick_bypass_bot"
 def bot_request(method, payload):
     return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload)
 
-async def get_raw_response(chat_id, message_id, user_msg_url):
+def get_progress_bar(percent):
+    done = int(percent / 10)
+    remain = 10 - done
+    bar = "■" * done + "□" * remain
+    return f"[{bar}] {percent}%"
+
+async def get_and_animate(chat_id, message_id, user_msg_url):
+    # Initial Message
+    resp = bot_request("sendMessage", {
+        "chat_id": chat_id,
+        "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
+        "reply_to_message_id": message_id,
+        "parse_mode": "Markdown"
+    }).json()
+    
+    processing_msg_id = resp.get("result", {}).get("message_id")
+
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     await client.start()
     
     try:
-        async with client.conversation(TARGET_BOT, timeout=60) as conv:
-            # Nick Bot ko message bhejo
+        async with client.conversation(TARGET_BOT, timeout=45) as conv:
             await conv.send_message(user_msg_url)
             
-            # Nick Bot ke processing messages skip karo
-            # Ye tab tak wait karega jab tak final result na mil jaye
-            while True:
-                response = await conv.get_response(timeout=45)
-                # Agar message mein "Bypassed Link" word hai, toh ye final response hai
-                if "Bypassed Link" in response.text or "https://" in response.text:
-                    raw_text = response.text
-                    break
-            
-            # Nick Bot ka username badal kar apna lagao
-            final_text = raw_text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
+            # Progress Update
+            if processing_msg_id:
+                bot_request("editMessageText", {
+                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
+                })
 
-            # Bilkul waisa hi message bhej do (No modification)
-            bot_request("sendMessage", {
-                "chat_id": chat_id,
-                "text": final_text,
-                "reply_to_message_id": message_id,
-                "disable_web_page_preview": True
-            })
+            # Response fetch
+            response = await conv.get_response()
+            raw_text = response.text
+
+            # --- LOGIC TO EXTRACT DATA ---
+            # 1. Extract Original Link
+            org_link = user_msg_url
+            if "Original Link :" in raw_text:
+                found_org = re.findall(r'https?://[^\s]+', raw_text.split("Original Link :")[1])
+                if found_org: org_link = found_org[0]
+
+            # 2. Extract Bypassed Link or JSON Error
+            bypass_content = ""
+            if "Bypassed Link :┖" in raw_text:
+                # ┖ ke baad ka content nikalna aur "Time Taken" se pehle tak ka lena
+                content_part = raw_text.split("Bypassed Link :┖")[1]
+                bypass_content = content_part.split("Time Taken :")[0].strip()
+            else:
+                # Fallback: agar format alag ho toh second link utha lo
+                all_urls = re.findall(r'https?://[^\s]+', raw_text)
+                if len(all_urls) >= 2:
+                    bypass_content = all_urls[1]
+                else:
+                    bypass_content = raw_text # Sab kuch dikha do agar kuch na mile
+
+            # --- FINAL FORMATTING ---
+            final_text = (
+                "✅ **BYPASSED!**\n\n"
+                "**ORIGINAL LINK:**\n"
+                f"{org_link}\n\n"
+                "**BYPASSED LINK:**\n"
+                f"{bypass_content}"
+            )
+
+            if processing_msg_id:
+                bot_request("editMessageText", {
+                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
+                })
                 
     except Exception as e:
-        # Error aane par hi kuch extra print hoga
-        pass
+        if processing_msg_id:
+            bot_request("editMessageText", {
+                "chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"
+            })
     finally:
         await client.disconnect()
 
@@ -57,21 +101,25 @@ def webhook():
     data = request.get_json()
     if data and "message" in data and "text" in data["message"]:
         msg = data["message"]
-        chat_id, text, mid = msg["chat"]["id"], msg["text"], msg["message_id"]
+        chat_id = msg["chat"]["id"]
+        text = msg["text"]
+        mid = msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Send Link to Bypass."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
-        # Agar link hai toh process karo
-        if "http" in text:
+        urls = re.findall(r'https?://[^\s]+', text)
+        if urls:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_raw_response(chat_id, mid, text.strip()))
-            loop.close()
+            loop.run_until_complete(get_and_animate(chat_id, mid, urls[0]))
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Raw Forwarder is Online!"
+    return "Bot is Online!"
+
+if __name__ == '__main__':
+    app.run(port=5000)
