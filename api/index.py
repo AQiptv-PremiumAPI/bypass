@@ -13,17 +13,19 @@ API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 BOT_TOKEN = '8420015561:AAFdkmCe8uVGbB9FJWhV4emj9s_xFvwMViQ'
 STRING_SESSION = "1BVtsOIMBuxpEfQxpdroVzE6VZ3Z7ZXSgZU5C3rCDrmwMpnHDnMdZdHLQF80003Ysr1AvMkSy5dlle0OO7RZTLQIQnEza9XasCzpv8rrhYcaf0QGyIKf_COX-GKdedv_4XXFLlbyufhZAfeVjJyZNCG9VP0ex_fh9uek-R9ExQn7qxfbBbr0ONLYcV-32qX68ljBYclI8QiqIutqNvlSP9vnEdqEoD-Uhfe7XdVukMc8bKJNG4kWl6E7BjOOtuZHpvfShDMXFaZCTcq8mw1ela4UzSNxfTnk-GT_tZTH288X_TZUGtVvPUsdWrKkTEUhHclgn_F7HrNwxzCVylTCw47C5XDVEbnA=" 
 TARGET_BOT = "@nick_bypass_bot"
-ALLOWED_CHAT = "riotv_bypass"
 
 def bot_request(method, payload):
-    return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload, timeout=10)
+    return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload)
 
 def get_progress_bar(percent):
+    # 10 boxes total: har box 10% represent karta hai
     done = int(percent / 10)
-    bar = "■" * done + "□" * (10 - done)
+    remain = 10 - done
+    bar = "■" * done + "□" * remain
     return f"[{bar}] {percent}%"
 
 async def get_and_animate(chat_id, message_id, user_msg_url):
+    # Initial Message: 20%
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
         "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
@@ -31,63 +33,80 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
         "parse_mode": "Markdown"
     }).json()
     
-    p_id = resp.get("result", {}).get("message_id")
-    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
+    processing_msg_id = resp.get("result", {}).get("message_id")
 
+    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
+    await client.start()
+    
     try:
-        await client.start()
-        async with client.conversation(TARGET_BOT, timeout=30) as conv:
+        async with client.conversation(TARGET_BOT, timeout=45) as conv:
             await conv.send_message(user_msg_url)
-            if p_id:
+            
+            # Update to 40%
+            if processing_msg_id:
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": p_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
+                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
                 })
-            await conv.get_response()
-            response = await conv.get_response()
-            raw_text = response.text
+
+            await conv.get_response() # Skip first msg
+            
+            # Update to 80%
+            if processing_msg_id:
+                bot_request("editMessageText", {
+                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
+                })
+
+            try:
+                response = await conv.get_response(timeout=15)
+                raw_text = response.text
+            except:
+                raw_text = "❌ Error: Timeout"
+
+            # Parsing Links
             all_urls = re.findall(r'https?://[^\s]+', raw_text)
             if len(all_urls) >= 2:
+                # 100% Update just before showing result
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": p_id,
+                    "chat_id": chat_id, "message_id": processing_msg_id,
                     "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
                 })
-                final_text = f"✅ **BYPASSED!**\n\n**ORIGINAL:**\n{all_urls[0]}\n\n**BYPASSED:**\n{all_urls[1]}"
+                
+                final_text = (
+                    "✅ **BYPASSED!**\n\n"
+                    f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n"
+                    f"**BYPASSED LINK:**\n{all_urls[1]}"
+                )
             else:
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
-            if p_id:
-                bot_request("editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True})
+
+            # Final Result
+            if processing_msg_id:
+                bot_request("editMessageText", {
+                    "chat_id": chat_id, "message_id": processing_msg_id,
+                    "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
+                })
+                
     except Exception as e:
-        if p_id: bot_request("editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⚠️ Error: {str(e)}"})
+        if processing_msg_id:
+            bot_request("editMessageText", {
+                "chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"
+            })
     finally:
         await client.disconnect()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    if not data or "message" not in data:
-        return "ok", 200
+    if data and "message" in data and "text" in data["message"]:
+        msg = data["message"]
+        chat_id = msg["chat"]["id"]
+        text = msg["text"]
+        mid = msg["message_id"]
 
-    msg = data["message"]
-    chat_id = msg["chat"]["id"]
-    chat_type = msg["chat"]["type"] # 'private', 'group', or 'supergroup'
-    text = msg.get("text", "")
-    mid = msg["message_id"]
-    chat_username = msg["chat"].get("username", "").lower()
-
-    # --- 1. SABSE PEHLE DM CHECK (Sabse Majboot Filter) ---
-    if chat_type == "private":
-        bot_request("sendMessage", {
-            "chat_id": chat_id,
-            "text": "❌ **Access Denied!**\n\nJoin @riotv_bypass to use this bot.\nI don't work in Private DMs.",
-            "parse_mode": "Markdown"
-        })
-        return "ok", 200
-
-    # --- 2. AB GROUP KA LOGIC ---
-    if ALLOWED_CHAT.lower() in chat_username or chat_username == ALLOWED_CHAT.lower():
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ **Bot is Active!**\nSend any link to bypass."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
@@ -95,10 +114,11 @@ def webhook():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(get_and_animate(chat_id, mid, urls[0]))
-            loop.close()
 
     return "ok", 200
 
 @app.route('/')
 def home():
-    return "Bot is Live"
+    return "Progress Bar Bot is Online!"
+
+                          
