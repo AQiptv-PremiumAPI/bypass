@@ -65,7 +65,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                 raw_text = "❌ Error: Timeout"
 
             # Parsing Links
-            all_urls = re.findall(r'https?://[^\s]+', raw_text)
+            all_urls = re.findall(r'https?://[^\s┖│─]+', raw_text)
             if len(all_urls) >= 2:
                 # 100% Update just before showing result
                 bot_request("editMessageText", {
