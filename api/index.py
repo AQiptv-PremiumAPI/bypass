@@ -41,48 +41,50 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
         async with client.conversation(TARGET_BOT, timeout=60) as conv:
             await conv.send_message(user_msg_url)
             
-            # Progress update
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
                     "text": f"⏳ **Bypassing...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
                 })
 
-            # Nick Bot response wait
-            # Hum loop chalayenge taki 'Processing' message ke baad final result pakad sakein
             raw_text = ""
-            for _ in range(15): # Max 15 seconds wait
+            # Wait for the final message (skip intermediate 'Processing' messages)
+            for _ in range(20):
                 response = await conv.get_response()
-                if "Bypassed Link" in response.text or "Original Link" in response.text:
+                if "Processing" not in response.text:
                     raw_text = response.text
                     break
                 await asyncio.sleep(1)
 
-            # --- IMPROVED EXTRACTION LOGIC ---
-            bypass_content = ""
-            
-            # 1. Sabse pehle 'Bypassed Link :┖' ke baad ka text dhoondo
-            match = re.search(r"Bypassed Link\s*:[^h{]*([h{].*?)(?:\n|Time Taken|$)", raw_text, re.DOTALL)
-            
-            if match:
-                bypass_content = match.group(1).strip()
+            # --- DYNAMIC EXTRACTION LOGIC ---
+            final_text = ""
+
+            if "Bypassed Link" in raw_text:
+                # Standard success format
+                match = re.search(r"Bypassed Link\s*:[^h{]*([h{].*?)(?:\n|Time Taken|$)", raw_text, re.DOTALL)
+                bypass_content = match.group(1).strip() if match else "Error parsing link"
+                
+                final_text = (
+                    "✅ **BYPASSED!**\n\n"
+                    "**ORIGINAL LINK:**\n"
+                    f"{user_msg_url}\n\n"
+                    "**BYPASSED LINK:**\n"
+                    f"{bypass_content}"
+                )
             else:
-                # 2. Agar regex fail ho toh manual split try karo
-                if "Bypassed Link" in raw_text:
-                    after_bypass = raw_text.split("Bypassed Link")[-1]
-                    # '┖' symbol ko remove karo agar hai toh
-                    clean_after = after_bypass.replace(":", "").replace("┖", "").strip()
-                    bypass_content = clean_after.split("\n")[0].strip()
+                # Custom Response Handling (Like: No Script Found)
+                # Remove everything from 'Powered By' onwards
+                clean_res = raw_text.split("Powered By")[0].strip()
+                
+                # Agar message mein link hai toh usse pehle extra space add karega formatting ke liye
+                if "http" in clean_res:
+                    parts = clean_res.split("http")
+                    # Formatting: Title + \n\n + Link
+                    final_text = f"{parts[0].strip()}\n\nhttp{parts[1].strip()}"
+                else:
+                    final_text = clean_res
 
-            # Final Format
-            final_text = (
-                "✅ **BYPASSED!**\n\n"
-                "**ORIGINAL LINK:**\n"
-                f"{user_msg_url}\n\n"
-                "**BYPASSED LINK:**\n"
-                f"{bypass_content if bypass_content else '❌ Not Found'}"
-            )
-
+            # Update final message
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, 
@@ -110,7 +112,7 @@ def webhook():
         mid = msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot is Ready! Send me a link."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ **Bot is Active!**\nSend any link to bypass."})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
@@ -123,7 +125,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Bot is Online"
+    return "Bot is Running"
 
 if __name__ == '__main__':
     app.run(port=5000)
