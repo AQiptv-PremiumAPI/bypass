@@ -109,7 +109,7 @@ def webhook():
             bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
-        urls = re.findall(r'https?://[^\s]+', text)
+        urls = re.findall(r'https?://[^\s┖│─]+', raw_text)
         if urls:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
