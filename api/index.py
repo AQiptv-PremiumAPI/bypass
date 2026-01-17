@@ -1,131 +1,100 @@
-from flask import Flask, request
-from telethon import TelegramClient
-from telethon.sessions import StringSession
 import asyncio
-import requests
 import re
+import time
+from flask import Flask, request
+from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
+import requests
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-API_ID = 39707299 
-API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 BOT_TOKEN = '8420015561:AAFdkmCe8uVGbB9FJWhV4emj9s_xFvwMViQ'
-STRING_SESSION = "1BVtsOIMBuxpEfQxpdroVzE6VZ3Z7ZXSgZU5C3rCDrmwMpnHDnMdZdHLQF80003Ysr1AvMkSy5dlle0OO7RZTLQIQnEza9XasCzpv8rrhYcaf0QGyIKf_COX-GKdedv_4XXFLlbyufhZAfeVjJyZNCG9VP0ex_fh9uek-R9ExQn7qxfbBbr0ONLYcV-32qX68ljBYclI8QiqIutqNvlSP9vnEdqEoD-Uhfe7XdVukMc8bKJNG4kWl6E7BjOOtuZHpvfShDMXFaZCTcq8mw1ela4UzSNxfTnk-GT_tZTH288X_TZUGtVvPUsdWrKkTEUhHclgn_F7HrNwxzCVylTCw47C5XDVEbnA=" 
-TARGET_BOT = "@nick_bypass_bot"
 
 def bot_request(method, payload):
     return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=payload)
 
-def get_progress_bar(percent):
-    done = int(percent / 10)
-    remain = 10 - done
-    bar = "■" * done + "□" * remain
-    return f"[{bar}] {percent}%"
+# --- ADVANCE STEALTH BYPASS LOGIC ---
+def solve_and_bypass(url):
+    """
+    Uses Playwright Stealth to bypass Cloudflare Turnstile, 
+    Bot Verification, and solve/skip simple JS Captchas.
+    """
+    with sync_playwright() as p:
+        # Browser launch with Stealth Tadka
+        browser = p.chromium.launch(headless=True) # Production me True rakhein
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            viewport={'width': 1280, 'height': 720}
+        )
+        page = context.new_page()
+        stealth_sync(page) # Yeh bot detection ko disable kar deta hai
 
-async def get_and_animate(chat_id, message_id, user_msg_url):
-    # Initial Message
-    resp = bot_request("sendMessage", {
-        "chat_id": chat_id,
-        "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
-        "reply_to_message_id": message_id,
-        "parse_mode": "Markdown"
-    }).json()
-    
-    processing_msg_id = resp.get("result", {}).get("message_id")
+        try:
+            print(f"Opening: {url}")
+            page.goto(url, wait_until="networkidle", timeout=60000)
 
-    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-    await client.start()
-    
-    try:
-        async with client.conversation(TARGET_BOT, timeout=60) as conv:
-            await conv.send_message(user_msg_url)
+            # --- CAPTCHA/TURNSTILE SOLVER TADKA ---
+            # Agar Turnstile (Cloudflare) box dikhta hai, toh ye automatic click/wait karega
+            turnstile_selectors = ["iframe[src*='turnstile']", "div#turnstile-wrapper"]
+            for selector in turnstile_selectors:
+                if page.query_selector(selector):
+                    print("Cloudflare Turnstile Detected! Waiting for verification...")
+                    time.sleep(5) # Auto-solve wait
             
-            if processing_msg_id:
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
-                })
+            # --- ADS SKIP LOGIC ---
+            # VPLinks/GPLinks jaise sites par 'Dual Button' ya 'Timer' hota hai
+            # Hum automatic 'Get Link' button dhoond kar click karenge
+            possible_buttons = ["Get Link", "Continue", "Skip Ad", "Click here to continue"]
+            for btn_text in possible_buttons:
+                button = page.get_by_role("button", name=btn_text, exact=False).first
+                if button.is_visible():
+                    button.click()
+                    page.wait_for_load_state("networkidle")
 
-            raw_text = ""
-            # Wait for the final message (skip intermediate 'Processing' messages)
-            for _ in range(20):
-                response = await conv.get_response()
-                if "Processing" not in response.text:
-                    raw_text = response.text
-                    break
-                await asyncio.sleep(1)
+            # Final destination URL nikalna
+            time.sleep(3) # Redirects settle hone ka wait
+            final_destination = page.url
+            
+            browser.close()
+            return final_destination
 
-            # --- DYNAMIC EXTRACTION LOGIC ---
-            final_text = ""
-
-            if "Bypassed Link" in raw_text:
-                # Standard success format
-                match = re.search(r"Bypassed Link\s*:[^h{]*([h{].*?)(?:\n|Time Taken|$)", raw_text, re.DOTALL)
-                bypass_content = match.group(1).strip() if match else "Error parsing link"
-                
-                final_text = (
-                    "✅ **BYPASSED!**\n\n"
-                    "**ORIGINAL LINK:**\n"
-                    f"{user_msg_url}\n\n"
-                    "**BYPASSED LINK:**\n"
-                    f"{bypass_content}"
-                )
-            else:
-                # Custom Response Handling (Like: No Script Found)
-                # Remove everything from 'Powered By' onwards
-                clean_res = raw_text.split("Powered By")[0].strip()
-                
-                # Agar message mein link hai toh usse pehle extra space add karega formatting ke liye
-                if "http" in clean_res:
-                    parts = clean_res.split("http")
-                    # Formatting: Title + \n\n + Link
-                    final_text = f"{parts[0].strip()}\n\nhttp{parts[1].strip()}"
-                else:
-                    final_text = clean_res
-
-            # Update final message
-            if processing_msg_id:
-                bot_request("editMessageText", {
-                    "chat_id": chat_id, 
-                    "message_id": processing_msg_id,
-                    "text": final_text, 
-                    "parse_mode": "Markdown", 
-                    "disable_web_page_preview": True
-                })
-                
-    except Exception as e:
-        if processing_msg_id:
-            bot_request("editMessageText", {
-                "chat_id": chat_id, "message_id": processing_msg_id, "text": f"⚠️ Error: {str(e)}"
-            })
-    finally:
-        await client.disconnect()
+        except Exception as e:
+            browser.close()
+            return f"Bypass Error: {str(e)}"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    if data and "message" in data and "text" in data["message"]:
+    if data and "message" in data:
         msg = data["message"]
         chat_id = msg["chat"]["id"]
-        text = msg["text"]
-        mid = msg["message_id"]
+        text = msg.get("text", "")
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ **Bot is Active!**\nSend any link to bypass."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "🛸 **God Mode Bypasser Active!**\nCloudflare aur Captcha ki tension khatam. Link bhejo!"})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_and_animate(chat_id, mid, urls[0]))
+            user_link = urls[0]
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "🎭 **Solving Captcha & Bypassing Cloudflare...**"})
+
+            res_link = solve_and_bypass(user_link)
+
+            if res_link and "http" in res_link:
+                final_text = (
+                    "✅ **BYPASSED EVERYTHING!**\n\n"
+                    f"**ORIGINAL:** {user_link}\n"
+                    f"**DESTINATION:** {res_link}\n\n"
+                    "🔥 **Method:** Playwright Stealth Engine"
+                )
+            else:
+                final_text = "❌ **Failed:** Security is too high or site is down."
+
+            bot_request("sendMessage", {"chat_id": chat_id, "text": final_text, "disable_web_page_preview": True})
 
     return "ok", 200
 
-@app.route('/')
-def home():
-    return "Bot is Running"
-
-if __name__ == '__main__':
-    app.run(port=5000)
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=5000)
