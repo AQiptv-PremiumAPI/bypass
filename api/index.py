@@ -4,6 +4,7 @@ from telethon.sessions import StringSession
 import asyncio
 import requests
 import re
+import time
 
 app = Flask(__name__)
 
@@ -24,7 +25,7 @@ def get_progress_bar(percent):
     return f"[{bar}] {percent}%"
 
 async def get_and_animate(chat_id, message_id, user_msg_url):
-    # Initial Message
+    # Step 1: User ko pehla progress dikhana
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
         "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
@@ -38,54 +39,55 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
     await client.start()
     
     try:
-        async with client.conversation(TARGET_BOT, timeout=45) as conv:
+        async with client.conversation(TARGET_BOT, timeout=60) as conv:
             await conv.send_message(user_msg_url)
             
-            # Progress Update
+            # Step 2: Progress update to 50%
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
+                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
                 })
 
-            # Response fetch
-            response = await conv.get_response()
-            raw_text = response.text
+            # Logic: Nick bot pehle 'Processing' bhejta hai, phir use EDIT karta hai.
+            # Hum tab tak wait karenge jab tak "Original Link" text message mein na aa jaye.
+            
+            raw_text = ""
+            max_retries = 10
+            for _ in range(max_retries):
+                response = await conv.get_response()
+                raw_text = response.text
+                if "Original Link" in raw_text:
+                    break
+                await asyncio.sleep(1) # Thoda wait agar bot processing dikha raha ho
 
-            # --- LOGIC TO EXTRACT DATA ---
-            # 1. Extract Original Link
-            org_link = user_msg_url
-            if "Original Link :" in raw_text:
-                found_org = re.findall(r'https?://[^\s]+', raw_text.split("Original Link :")[1])
-                if found_org: org_link = found_org[0]
-
-            # 2. Extract Bypassed Link or JSON Error
-            bypass_content = ""
+            # --- EXTRACTION LOGIC ---
+            bypass_result = "Not Found"
+            
             if "Bypassed Link :┖" in raw_text:
-                # ┖ ke baad ka content nikalna aur "Time Taken" se pehle tak ka lena
-                content_part = raw_text.split("Bypassed Link :┖")[1]
-                bypass_content = content_part.split("Time Taken :")[0].strip()
-            else:
-                # Fallback: agar format alag ho toh second link utha lo
-                all_urls = re.findall(r'https?://[^\s]+', raw_text)
-                if len(all_urls) >= 2:
-                    bypass_content = all_urls[1]
-                else:
-                    bypass_content = raw_text # Sab kuch dikha do agar kuch na mile
-
-            # --- FINAL FORMATTING ---
+                # ┖ ke baad ka content aur 'Time Taken' se pehle ka content
+                parts = raw_text.split("Bypassed Link :┖")
+                if len(parts) > 1:
+                    content_after = parts[1]
+                    bypass_result = content_after.split("Time Taken")[0].strip()
+            
+            # Final Formatting
             final_text = (
                 "✅ **BYPASSED!**\n\n"
                 "**ORIGINAL LINK:**\n"
-                f"{org_link}\n\n"
+                f"{user_msg_url}\n\n"
                 "**BYPASSED LINK:**\n"
-                f"{bypass_content}"
+                f"{bypass_result}"
             )
 
+            # Final Result ko Telegram pe bhejna
             if processing_msg_id:
                 bot_request("editMessageText", {
-                    "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": final_text, "parse_mode": "Markdown", "disable_web_page_preview": True
+                    "chat_id": chat_id, 
+                    "message_id": processing_msg_id,
+                    "text": final_text, 
+                    "parse_mode": "Markdown", 
+                    "disable_web_page_preview": True
                 })
                 
     except Exception as e:
@@ -106,7 +108,7 @@ def webhook():
         mid = msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ **Bot Active!**\nSend any link to bypass."})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
@@ -119,7 +121,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Bot is Online!"
+    return "Reliable Bypass Bot is Online!"
 
 if __name__ == '__main__':
     app.run(port=5000)
