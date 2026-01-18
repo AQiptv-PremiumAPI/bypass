@@ -11,7 +11,8 @@ app = Flask(__name__)
 # --- CONFIGURATION ---
 API_ID = 39707299 
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
+RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
+TOKEN_LIST = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
 STRING_SESSION = "1BVtsOIMBuxpEfQxpdroVzE6VZ3Z7ZXSgZU5C3rCDrmwMpnHDnMdZdHLQF80003Ysr1AvMkSy5dlle0OO7RZTLQIQnEza9XasCzpv8rrhYcaf0QGyIKf_COX-GKdedv_4XXFLlbyufhZAfeVjJyZNCG9VP0ex_fh9uek-R9ExQn7qxfbBbr0ONLYcV-32qX68ljBYclI8QiqIutqNvlSP9vnEdqEoD-Uhfe7XdVukMc8bKJNG4kWl6E7BjOOtuZHpvfShDMXFaZCTcq8mw1ela4UzSNxfTnk-GT_tZTH288X_TZUGtVvPUsdWrKkTEUhHclgn_F7HrNwxzCVylTCw47C5XDVEbnA=" 
 TARGET_BOT = "@nick_bypass_bot"
 
