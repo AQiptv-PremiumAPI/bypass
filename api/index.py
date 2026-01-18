@@ -111,7 +111,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@SandiBypassBot")
+                res_msg = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
