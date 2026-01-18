@@ -28,7 +28,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
     # Initial Message: 20%
     resp = bot_request("sendMessage", {
         "chat_id": chat_id,
-        "text": f"⏳ **Processing...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Processing...**\n`{get_progress_bar(20)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -55,7 +55,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
             if processing_msg_id:
                 bot_request("editMessageText", {
                     "chat_id": chat_id, "message_id": processing_msg_id,
-                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                    "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
                 })
 
             try:
@@ -74,6 +74,7 @@ async def get_and_animate(chat_id, message_id, user_msg_url):
                 })
                 
                 final_text = (
+                    "✅ **BYPASSED!**\n\n"
                     f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n"
                     f"**BYPASSED LINK:**\n{all_urls[1]}"
                 )
@@ -105,7 +106,7 @@ def webhook():
         mid = msg["message_id"]
 
         if text.startswith("/start"):
-            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Join @Riotv_Bypass to bypass ads url."})
+            bot_request("sendMessage", {"chat_id": chat_id, "text": "✅ Bot Active! Send a link."})
             return "ok", 200
 
         urls = re.findall(r'https?://[^\s]+', text)
@@ -119,3 +120,4 @@ def webhook():
 @app.route('/')
 def home():
     return "Progress Bar Bot is Online!"
+                         
