@@ -68,7 +68,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 
                 bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required 🔐\n\n👉 Click the letter/number inside the circle\n\n⏳ Valid for 15 minutes",
+                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the letter/number inside the circle below:",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')})
 
@@ -84,7 +84,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                         break
                 if not verified: return
 
-            # --- START PROGRESS ANIMATION ---
+            # --- START PROGRESS ANIMATION (Only after Captcha is cleared or if no Captcha) ---
             # Extracting (40%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -111,7 +111,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
+                res_msg = response.text.replace("@Nick_Bypass_Bot", "@SandiBypassBot")
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -137,22 +137,9 @@ def webhook(idx):
 
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
-        chat_id = msg["chat"]["id"]
-        text = msg["text"]
-
-        # Handle Start Command
-        if text.startswith("/start"):
-            bot_request(token, "sendMessage", {
-                "chat_id": chat_id, 
-                "text": "✅ Join @Riotv_Bypass to bypass ads url."
-            })
-            return "ok", 200
-
-        # Handle URLs
-        urls = re.findall(r'https?://[^\s]+', text)
+        urls = re.findall(r'https?://[^\s]+', msg["text"])
         if urls:
-            asyncio.run(handle_bypass(token, chat_id, msg["message_id"], urls[0]))
-            
+            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
     return "ok", 200
 
 @app.route('/')
