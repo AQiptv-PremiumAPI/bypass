@@ -60,10 +60,10 @@ async def get_and_animate(token, chat_id, message_id, user_msg_url):
                 })
 
             try:
-                response = await conv.get_response(timeout=15)
+                response = await conv.get_response(timeout=25)
                 raw_text = response.text
             except:
-                raw_text = "❌ Error: Timeout"
+                raw_text = "❌ Failed"
 
             all_urls = re.findall(r'https?://[^\s]+', raw_text)
             if len(all_urls) >= 2:
