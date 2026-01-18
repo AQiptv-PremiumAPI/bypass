@@ -71,7 +71,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 # Send Captcha
                 cap_resp = bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the letter/number inside the circle below:",
+                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\n⏳ Valid for 15 minutes",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
                 cap_id = cap_resp.get("result", {}).get("message_id")
@@ -88,7 +88,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                         # [POINT 2] UPDATE CAPTCHA MSG: REMOVE BUTTONS & SHOW SUCCESS
                         bot_request(token, "editMessageCaption", {
                             "chat_id": chat_id, "message_id": cap_id,
-                            "caption": "✅ **Verification Successful!**",
+                            "caption": "✅ Captcha Verification Successful!",
                             "reply_markup": '{"inline_keyboard": []}'
                         })
                         
