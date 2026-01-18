@@ -73,7 +73,7 @@ async def get_and_animate(token, chat_id, message_id, user_msg_url):
                 })
                 final_text = f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n**BYPASSED LINK:**\n{all_urls[1]}"
             else:
-                final_text = raw_text.replace("@Nick_Bypass_Bot", "@sandibypassbot")
+                final_text = raw_text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
 
             if processing_msg_id:
                 bot_request(token, "editMessageText", {
