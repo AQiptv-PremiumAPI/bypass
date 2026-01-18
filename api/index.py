@@ -15,9 +15,6 @@ API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 STRING_SESSION = "1BVtsOIMBuxpEfQxpdroVzE6VZ3Z7ZXSgZU5C3rCDrmwMpnHDnMdZdHLQF80003Ysr1AvMkSy5dlle0OO7RZTLQIQnEza9XasCzpv8rrhYcaf0QGyIKf_COX-GKdedv_4XXFLlbyufhZAfeVjJyZNCG9VP0ex_fh9uek-R9ExQn7qxfbBbr0ONLYcV-32qX68ljBYclI8QiqIutqNvlSP9vnEdqEoD-Uhfe7XdVukMc8bKJNG4kWl6E7BjOOtuZHpvfShDMXFaZCTcq8mw1ela4UzSNxfTnk-GT_tZTH288X_TZUGtVvPUsdWrKkTEUhHclgn_F7HrNwxzCVylTCw47C5XDVEbnA="
 TARGET_BOT = "@nick_bypass_bot"
 
-# Force Join Channels
-CHANNELS = ["@riotvnetwork", "@riotv_bypass"]
-
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
 
@@ -27,16 +24,6 @@ def bot_request(token, method, payload, files=None):
         if files: return requests.post(url, data=payload, files=files, timeout=15)
         return requests.post(url, json=payload, timeout=15)
     except: return None
-
-# --- NEW: Check if user joined channels ---
-def check_join(token, user_id):
-    for channel in CHANNELS:
-        res = bot_request(token, "getChatMember", {"chat_id": channel, "user_id": user_id})
-        if res:
-            status = res.json().get("result", {}).get("status", "")
-            if status not in ["creator", "administrator", "member"]:
-                return False
-    return True
 
 def get_progress_bar(percent):
     done = int(percent / 10)
@@ -49,22 +36,8 @@ async def solve_remote(btn_text):
         if msgs and msgs[0].reply_markup:
             await msgs[0].click(text=btn_text)
 
-async def handle_bypass(token, chat_id, message_id, user_url, user_id):
-    # --- 1. FORCE JOIN CHECK ---
-    if not check_join(token, user_id):
-        kb = {"inline_keyboard": [
-            [{"text": "Join Channel 1", "url": "https://t.me/riotvnetwork"}],
-            [{"text": "Join Channel 2", "url": "https://t.me/riotv_bypass"}]
-        ]}
-        bot_request(token, "sendMessage", {
-            "chat_id": chat_id,
-            "text": "❌ **Access Denied!**\n\nYou must join our channels to use this bot. After joining, send the link again.",
-            "reply_markup": kb,
-            "reply_to_message_id": message_id
-        })
-        return
-
-    # 2. ALWAYS SHOW PROCESSING FIRST
+async def handle_bypass(token, chat_id, message_id, user_url):
+    # 1. ALWAYS SHOW PROCESSING FIRST
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
@@ -83,6 +56,7 @@ async def handle_bypass(token, chat_id, message_id, user_url, user_id):
 
             # --- CHECK FOR CAPTCHA ---
             if response.photo or "Human Verification" in (response.text or ""):
+                # Forward Captcha to user
                 img_data = io.BytesIO()
                 await client.download_media(response.photo, file=img_data)
                 img_data.seek(0)
@@ -94,39 +68,37 @@ async def handle_bypass(token, chat_id, message_id, user_url, user_id):
 
                 bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the letter/number inside the circle below:",
+                    'caption': "🔐 Human Verification Required 🔐\n\n👉 Click the letter/number inside the circle\n\n⏳ Valid for 15 minutes",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')})
 
+                # Wait for user to solve and Nick Bot to start processing
                 verified = False
-                for _ in range(150):
+                for _ in range(150): # 1.5s * 150 = ~4 mins
                     await asyncio.sleep(1.5)
                     last = await client.get_messages(TARGET_BOT, limit=1)
                     msg_text = last[0].text or ""
                     if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
                         verified = True
-                        # Re-send logic if verification successful
-                        if "Verification Successful" in msg_text:
-                            bot_request(token, "sendMessage", {"chat_id": chat_id, "text": "✅ **Verification Successful!** Restarting..."})
-                            await conv.send_message(user_url)
-                            response = await conv.get_response()
-                        else:
-                            response = last[0]
+                        response = last[0]
                         break
                 if not verified: return
 
-            # --- START PROGRESS ANIMATION ---
+            # --- START PROGRESS ANIMATION (Only after Captcha is cleared or if no Captcha) ---
+            # Extracting (40%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
                 "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
 
+            # Bypassing (70%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
                 "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
             })
 
+            # Wait for result if not already there
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -139,7 +111,7 @@ async def handle_bypass(token, chat_id, message_id, user_url, user_id):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@SandiBypassBot")
+                res_msg = response.text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -165,28 +137,10 @@ def webhook(idx):
 
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
-        user_id = msg["from"]["id"]
-        
-        # /start command check with Force Join
-        if msg["text"] == "/start":
-            if not check_join(token, user_id):
-                kb = {"inline_keyboard": [
-                    [{"text": "Join Channel 1", "url": "https://t.me/riotvnetwork"}],
-                    [{"text": "Join Channel 2", "url": "https://t.me/riotv_bypass"}]
-                ]}
-                bot_request(token, "sendMessage", {
-                    "chat_id": msg["chat"]["id"],
-                    "text": "👋 Welcome! Please join our channels to use this bot.",
-                    "reply_markup": kb
-                })
-            else:
-                bot_request(token, "sendMessage", {"chat_id": msg["chat"]["id"], "text": "✅ Bot is ready! Send me a link."})
-            return "ok", 200
-
         urls = re.findall(r'https?://[^\s]+', msg["text"])
         if urls:
-            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0], user_id))
+            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot with Force Join & Re-send Logic Active"
+def home(): return "Sandi Bot with Auto-Captcha & Smooth Progress is Live"
