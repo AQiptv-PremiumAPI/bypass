@@ -2,8 +2,9 @@ import os
 import asyncio
 import requests
 import re
+import io  # <--- Memory handling ke liye zaroori
 from flask import Flask, request
-from telethon import TelegramClient, functions, types
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 app = Flask(__name__)
@@ -28,14 +29,14 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
+# Captcha Button Click karne ke liye function
 async def solve_captcha_remote(btn_text):
-    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-    await client.start()
-    async with client.conversation(TARGET_BOT) as conv:
-        messages = await client.get_messages(TARGET_BOT, limit=1)
-        if messages and messages[0].reply_markup:
-            await messages[0].click(text=btn_text)
-    await client.disconnect()
+    async with TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH) as client:
+        # Nick Bot ka last message uthao
+        msgs = await client.get_messages(TARGET_BOT, limit=1)
+        if msgs and msgs[0].reply_markup:
+            # Button par click karo
+            await msgs[0].click(text=btn_text)
 
 async def get_and_animate(token, chat_id, message_id, user_msg_url):
     # STEP 1: PROCESSING (10%)
@@ -53,52 +54,68 @@ async def get_and_animate(token, chat_id, message_id, user_msg_url):
             await conv.send_message(user_msg_url)
             
             # STEP 2: EXTRACTING (40%)
-            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"})
+            bot_request(token, "editMessageText", {
+                "chat_id": chat_id, "message_id": p_id,
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
+            })
             
             response = await conv.get_response()
 
-            # --- CAPTCHA MIRRORING ---
+            # --- CAPTCHA HANDLING (MEMORY METHOD) ---
             if response.photo or "Human Verification" in response.text:
-                photo_path = await client.download_media(response.photo)
-                
-                # Nick Bot ke buttons mirror karna
+                # 1. Image ko Memory (RAM) mein download karo (No File System Error)
+                file_bytes = io.BytesIO()
+                await client.download_media(response.photo, file=file_bytes)
+                file_bytes.seek(0)  # Pointer reset
+
+                # 2. Nick Bot ke Buttons copy karo
                 keyboard = []
                 if response.reply_markup:
                     for row in response.reply_markup.rows:
                         btn_row = []
                         for btn in row.buttons:
+                            # Callback data mein text bhej rahe hain taaki hum wahi click kar sakein
                             btn_row.append({'text': btn.text, 'callback_data': f"solve_{btn.text}"})
                         keyboard.append(btn_row)
 
-                with open(photo_path, 'rb') as f:
-                    bot_request(token, "sendPhoto", {
-                        'chat_id': chat_id,
-                        'caption': "🔒 **Human Verification Required**\n\n👉 Click the **letter / number** inside the circle below:",
-                        'reply_markup': str({'inline_keyboard': keyboard}).replace("'", '"')
-                    }, files={'photo': f})
+                # 3. User ko Photo aur Buttons bhejo (Using Bytes)
+                bot_request(token, "sendPhoto", {
+                    'chat_id': chat_id,
+                    'caption': "🔒 **Human Verification Required**\n\n👉 Click the **letter / number** inside the circle below:",
+                    'reply_markup': str({'inline_keyboard': keyboard}).replace("'", '"')
+                }, files={'photo': ('captcha.jpg', file_bytes, 'image/jpeg')})
                 
-                # Check looping for success
+                # 4. Wait for Verification Success
                 verified = False
-                for _ in range(40): # 3 mins approx
+                for _ in range(60): # Max 5 mins wait
                     await asyncio.sleep(5)
                     last_msgs = await client.get_messages(TARGET_BOT, limit=1)
                     if "Verification Successful" in last_msgs[0].text or "Processing" in last_msgs[0].text:
                         verified = True
-                        bot_request(token, "sendMessage", {"chat_id": chat_id, "text": "✅ **Verification Successful!**"})
+                        bot_request(token, "sendMessage", {"chat_id": chat_id, "text": "✅ **Verification Successful!** Resuming..."})
+                        # Agar result aa gaya hai to use pakdo
                         response = last_msgs[0] if "https" in last_msgs[0].text else await conv.get_response()
                         break
-                if not verified: raise Exception("Captcha Timeout")
+                
+                if not verified:
+                    raise Exception("Captcha Timeout or Failed")
 
             # STEP 3: BYPASSING (70%)
-            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"})
+            bot_request(token, "editMessageText", {
+                "chat_id": chat_id, "message_id": p_id,
+                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+            })
 
             # STEP 4: COMPLETED (100%)
             raw_text = response.text
             all_urls = re.findall(r'https?://[^\s]+', raw_text)
             
             if len(all_urls) >= 2:
-                bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"})
                 final_text = f"**ORIGINAL LINK:**\n{all_urls[0]}\n\n**BYPASSED LINK:**\n{all_urls[1]}"
+                bot_request(token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": p_id,
+                    "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
+                })
             else:
                 final_text = raw_text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
 
@@ -108,33 +125,45 @@ async def get_and_animate(token, chat_id, message_id, user_msg_url):
             })
 
     except Exception as e:
-        bot_request(token, "sendMessage", {"chat_id": chat_id, "text": f"⚠️ Error: {str(e)}"})
+        if p_id:
+            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⚠️ Error: {str(e)}"})
     finally:
         await client.disconnect()
 
+# --- WEBHOOK ROUTES ---
 @app.route('/webhook/<int:bot_idx>', methods=['POST'])
 def webhook(bot_idx):
     if bot_idx >= len(TOKENS): return "ok", 200
     token = TOKENS[bot_idx]
     data = request.get_json()
 
+    # BUTTON CLICK HANDLE KARNA
     if "callback_query" in data:
         cb = data["callback_query"]
         if cb["data"].startswith("solve_"):
             btn_text = cb["data"].split("_")[1]
-            asyncio.run(solve_captcha_remote(btn_text))
-            bot_request(token, "answerCallbackQuery", {"callback_query_id": cb["id"], "text": "Verifying..."})
+            # Background mein Nick Bot par click karo
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(solve_captcha_remote(btn_text))
+            loop.close()
+            
+            bot_request(token, "answerCallbackQuery", {"callback_query_id": cb["id"], "text": f"Selecting {btn_text}..."})
         return "ok", 200
 
+    # LINK MESSAGE HANDLE KARNA
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         if msg["text"].startswith("/start"):
-            bot_request(token, "sendMessage", {"chat_id": msg["chat"]["id"], "text": "✅ Bot Active! Send a link."})
+            bot_request(token, "sendMessage", {"chat_id": msg["chat"]["id"], "text": "✅ Bot Ready! Send Link."})
         else:
             urls = re.findall(r'https?://[^\s]+', msg["text"])
             if urls:
-                asyncio.run(get_and_animate(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_and_animate(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+                loop.close()
     return "ok", 200
 
 @app.route('/')
-def home(): return "Multi-Bot Live"
+def home(): return "Vercel Read-Only Fixed Code Live!"
