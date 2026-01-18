@@ -71,7 +71,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 # Send Captcha
                 cap_resp = bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\nValid for 15 minutes",
+                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\n⏳ Valid for 15 minutes",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
                 cap_id = cap_resp.get("result", {}).get("message_id")
