@@ -37,7 +37,7 @@ async def solve_remote(btn_text):
             await msgs[0].click(text=btn_text)
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. ALWAYS SHOW PROCESSING FIRST
+    # 1. INITIAL PROCESSING MESSAGE
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
@@ -56,7 +56,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 
             # --- CHECK FOR CAPTCHA ---
             if response.photo or "Human Verification" in (response.text or ""):
-                # [POINT 1] DELETE PROCESSING MESSAGE IMMEDIATELY
+                # Delete initial processing msg when captcha comes
                 bot_request(token, "deleteMessage", {"chat_id": chat_id, "message_id": p_id})
                 
                 img_data = io.BytesIO()
@@ -68,13 +68,13 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                     for row in response.reply_markup.rows:
                         kb.append([{'text': b.text, 'callback_data': f"solve_{b.text}"} for b in row.buttons])
 
-                # Send Captcha
+                # Send Captcha and keep its ID as the main p_id for updates
                 cap_resp = bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\nValid for 15 minutes",
+                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the correct button below:",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
-                cap_id = cap_resp.get("result", {}).get("message_id")
+                p_id = cap_resp.get("result", {}).get("message_id") # UPDATED p_id to Captcha Message
 
                 # Wait for Success
                 verified = False
@@ -86,59 +86,50 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                     if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
                         verified = True
                         
-                        # [POINT 2] UPDATE CAPTCHA MSG: REMOVE BUTTONS & SHOW SUCCESS
+                        # UPDATE CAPTCHA MSG: Show success and remove buttons
                         bot_request(token, "editMessageCaption", {
-                            "chat_id": chat_id, "message_id": cap_id,
-                            "caption": "✅ Captcha Verification Successful!",
+                            "chat_id": chat_id, "message_id": p_id,
+                            "caption": "✅ **Verification Successful!**\n\n⏳ **Extracting...**",
                             "reply_markup": '{"inline_keyboard": []}'
                         })
                         
-                        # [POINT 3] TURANT PROCESSING START (NEW MESSAGE)
-                        new_p_resp = bot_request(token, "sendMessage", {
-                            "chat_id": chat_id, 
-                            "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
-                            "parse_mode": "Markdown"
-                        }).json()
-                        p_id = new_p_resp.get("result", {}).get("message_id")
-                        
-                        # Verification success ke baad link ko ak bar piche se submit karega
+                        # Submit link again silently
                         await conv.send_message(user_url)
                         response = await conv.get_response()
                         break
                 if not verified: return
 
-            # --- START PROGRESS ANIMATION ---
+            # --- START PROGRESS ANIMATION ON THE SAME MESSAGE ---
             # Extracting (40%)
-            bot_request(token, "editMessageText", {
+            bot_request(token, "editMessageCaption" if response.photo else "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
+                "caption" if response.photo else "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", 
+                "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
 
             # Bypassing (70%)
-            bot_request(token, "editMessageText", {
+            bot_request(token, "editMessageCaption" if response.photo else "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                "caption" if response.photo else "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", 
+                "parse_mode": "Markdown"
             })
 
-            # Wait for result if not already there
+            # Wait for final result
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
             # Completed (100%)
             urls = re.findall(r'https?://[^\s]+', response.text)
             if len(urls) >= 2:
-                bot_request(token, "editMessageText", {
-                    "chat_id": chat_id, "message_id": p_id,
-                    "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
-                })
-                res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
+                final_caption = f"✅ **Completed!**\n\n**ORIGINAL:** {urls[0]}\n**BYPASSED:** {urls[1]}"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
+                final_caption = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
 
-            bot_request(token, "editMessageText", {
+            bot_request(token, "editMessageCaption" if response.photo else "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": res_msg, "parse_mode": "Markdown", "disable_web_page_preview": True
+                "caption" if response.photo else "text": final_caption, 
+                "parse_mode": "Markdown", "disable_web_page_preview": True
             })
 
     except Exception as e:
@@ -151,13 +142,11 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 def webhook(idx):
     data = request.get_json()
     token = TOKENS[idx]
-    
     if "callback_query" in data:
         btn = data["callback_query"]["data"].split("_")[1]
         asyncio.run(solve_remote(btn))
         bot_request(token, "answerCallbackQuery", {"callback_query_id": data["callback_query"]["id"], "text": "Verifying..."})
         return "ok", 200
-
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         urls = re.findall(r'https?://[^\s]+', msg["text"])
@@ -166,4 +155,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot with Auto-Captcha & Smooth Progress is Live"
+def home(): return "Sandi Bot is Online"
