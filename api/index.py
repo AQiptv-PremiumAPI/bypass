@@ -68,7 +68,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 
                 bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the letter/number inside the circle below:",
+                    'caption': "🔐 Human Verification Required 🔐\n\n👉 Click the letter/number inside the circle\n\n⏳ Valid for 15 minutes",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')})
 
@@ -111,7 +111,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@SandiBypassBot")
+                res_msg = response.text.replace("@Nick_Bypass_Bot", "@RioBypassBot")
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -137,9 +137,20 @@ def webhook(idx):
 
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
-        urls = re.findall(r'https?://[^\s]+', msg["text"])
+        chat_id = msg["chat"]["id"]
+        text = msg["text"]
+
+    if text.startswith("/start"):
+        bot_request(token, "sendMessage", {
+        "chat_id": chat_id, 
+        "text": "✅ Join @Riotv_Bypass to bypass ads url."
+              })
+            return "ok", 200
+
+        urls = re.findall(r'https?://[^\s]+', text)
         if urls:
-            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+            asyncio.run(handle_bypass(token, chat_id, msg["message_id"], urls[0]))
+            
     return "ok", 200
 
 @app.route('/')
