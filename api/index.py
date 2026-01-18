@@ -14,6 +14,7 @@ API_ID = 39707299
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 STRING_SESSION = "1BVtsOL0Bu4fBzpV-FhYXBcQcBA89IDoDqELmvjXfUSnIOLQemGxlvzFzDW4rz3gO815J0GOhOvNifnwEccgWnWmHa2KzYrJuKjVoYi1SbpgGJR8ZtOmxMSML7iJ0lnvxO7mNpiqtgKLGMe0PcQ6DqD6EwoZXQ57wDcLzR4LWCOgPaEQhgDPQpB_kf7qbNQSbD6ezSb2W9o1Wwn5i6WEvT-O_tzRz9e_DU_5zqwR_6dkXa0jTEFFxA0gxlqMgV8O2j3O3wnbLXKDPLEvVsTMBFro-_xhrZJ4nigeYAelp7rsKXYUBnqXTiovbKK4asOiJa8GqsVeqKoasEGo35vO7OTzXwpvlBEQ="
 TARGET_BOT = "@nick_bypass_bot"
+OCR_API_KEY = 'helloworld' # Yahan apni OCR.space API key dalein (Best performance ke liye apni lein)
 
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
@@ -30,6 +31,25 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
+# --- AUTO CAPTCHA SOLVER FUNCTION ---
+def get_captcha_solution(img_bytes):
+    try:
+        payload = {
+            'apikey': OCR_API_KEY,
+            'language': 'eng',
+            'isOverlayRequired': False,
+            'OCREngine': 2 
+        }
+        files = {'filename': ('c.jpg', img_bytes, 'image/jpeg')}
+        r = requests.post('https://api.ocr.space/parse/image', files=files, data=payload, timeout=10).json()
+        if r.get('OCRExitCode') == 1:
+            text = r['ParsedResults'][0]['ParsedText'].strip().upper()
+            # Clean text to find single char
+            chars = re.findall(r'[A-Z0-9]', text)
+            return chars[0] if chars else None
+    except: return None
+    return None
+
 async def solve_remote(btn_text):
     async with TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH) as client:
         msgs = await client.get_messages(TARGET_BOT, limit=1)
@@ -37,7 +57,6 @@ async def solve_remote(btn_text):
             await msgs[0].click(text=btn_text)
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. ALWAYS SHOW PROCESSING FIRST
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
@@ -54,51 +73,49 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- CHECK FOR CAPTCHA ---
+            # --- AUTOMATIC CAPTCHA CHECK ---
             if response.photo or "Human Verification" in (response.text or ""):
-                # Forward Captcha to user
-                img_data = io.BytesIO()
-                await client.download_media(response.photo, file=img_data)
-                img_data.seek(0)
-
-                kb = []
-                if response.reply_markup:
+                bot_request(token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": p_id,
+                    "text": f"⏳ **Solving Captcha...**\n`{get_progress_bar(30)}`", "parse_mode": "Markdown"
+                })
+                
+                # Image download aur OCR solution
+                img_data = await client.download_media(response.photo, file=bytes)
+                solution = get_captcha_solution(img_data)
+                
+                if solution and response.reply_markup:
+                    # Automatic click logic
+                    clicked = False
                     for row in response.reply_markup.rows:
-                        kb.append([{'text': b.text, 'callback_data': f"solve_{b.text}"} for b in row.buttons])
+                        for button in row.buttons:
+                            if button.text.strip().upper() == solution:
+                                await response.click(text=button.text)
+                                clicked = True
+                                break
+                    
+                    if clicked:
+                        # Wait for Verification Successful
+                        for _ in range(20):
+                            await asyncio.sleep(1.5)
+                            last = await client.get_messages(TARGET_BOT, limit=1)
+                            if "Verification Successful" in (last[0].text or "") or "Processing" in (last[0].text or ""):
+                                response = last[0]
+                                break
 
-                bot_request(token, "sendPhoto", {
-                    'chat_id': chat_id,
-                    'caption': "🔐 **Human Verification Required**\n\n👉 Click the letter/number inside the circle below:",
-                    'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
-                }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')})
-
-                # Wait for user to solve and Nick Bot to start processing
-                verified = False
-                for _ in range(150): # 1.5s * 150 = ~4 mins
-                    await asyncio.sleep(1.5)
-                    last = await client.get_messages(TARGET_BOT, limit=1)
-                    msg_text = last[0].text or ""
-                    if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
-                        verified = True
-                        response = last[0]
-                        break
-                if not verified: return
-
-            # --- START PROGRESS ANIMATION (Only after Captcha is cleared or if no Captcha) ---
-            # Extracting (40%)
+            # --- REST OF THE PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
             })
+            
             await asyncio.sleep(1)
 
-            # Bypassing (70%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
             })
 
-            # Wait for result if not already there
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
