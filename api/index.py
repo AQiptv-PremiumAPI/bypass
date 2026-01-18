@@ -84,7 +84,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                         break
                 if not verified: return
 
-            # --- START PROGRESS ANIMATION (Only after Captcha is cleared or if no Captcha) ---
+            # --- START PROGRESS ANIMATION ---
             # Extracting (40%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -140,13 +140,15 @@ def webhook(idx):
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
-    if text.startswith("/start"):
-        bot_request(token, "sendMessage", {
-        "chat_id": chat_id, 
-        "text": "✅ Join @Riotv_Bypass to bypass ads url."
-              })
+        # Handle Start Command
+        if text.startswith("/start"):
+            bot_request(token, "sendMessage", {
+                "chat_id": chat_id, 
+                "text": "✅ Join @Riotv_Bypass to bypass ads url."
+            })
             return "ok", 200
 
+        # Handle URLs
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
             asyncio.run(handle_bypass(token, chat_id, msg["message_id"], urls[0]))
