@@ -71,7 +71,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 # Send Captcha
                 cap_resp = bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\n⏳ Valid for 15 minutes",
+                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\nValid for 15 minutes",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
                 cap_id = cap_resp.get("result", {}).get("message_id")
@@ -85,6 +85,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                     
                     if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
                         verified = True
+                        
                         # [POINT 2] UPDATE CAPTCHA MSG: REMOVE BUTTONS & SHOW SUCCESS
                         bot_request(token, "editMessageCaption", {
                             "chat_id": chat_id, "message_id": cap_id,
@@ -92,7 +93,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                             "reply_markup": '{"inline_keyboard": []}'
                         })
                         
-                        # [POINT 3] START NEW PROCESSING FOR BYPASS
+                        # [POINT 3] TURANT PROCESSING START (NEW MESSAGE)
                         new_p_resp = bot_request(token, "sendMessage", {
                             "chat_id": chat_id, 
                             "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
@@ -100,12 +101,9 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                         }).json()
                         p_id = new_p_resp.get("result", {}).get("message_id")
                         
-                        # Re-send if needed or use last msg
-                        if "Verification Successful" in msg_text:
-                            await conv.send_message(user_url)
-                            response = await conv.get_response()
-                        else:
-                            response = last[0]
+                        # Verification success ke baad link ko ak bar piche se submit karega
+                        await conv.send_message(user_url)
+                        response = await conv.get_response()
                         break
                 if not verified: return
 
@@ -123,6 +121,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
             })
 
+            # Wait for result if not already there
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
