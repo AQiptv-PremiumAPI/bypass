@@ -34,7 +34,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     # 1. INITIAL STATUS
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"⏳ **Launching Mini App Auth...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Authenticating with Mini App...**\n`{get_progress_bar(10)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -44,30 +44,30 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- FIXED MINI APP AUTH LOGIC (https://t.me/Nick_Bypass_Bot?startapp=go) ---
-        bot = await client.get_input_entity(TARGET_BOT)
+        # --- FIXED ENTITY RESOLUTION ---
+        # Pehle bot ki poori details fetch karni hogi taaki 'Not a valid bot' error na aaye
+        bot_entity = await client.get_input_entity(TARGET_BOT)
         
-        # Step 1: Request WebView (This is what happens when you click startapp=go)
-        # It sends the 'go' parameter to the bot's mini app system
+        # Step 1: Open Mini App via startapp=go link simulation
         await client(functions.messages.RequestWebViewRequest(
-            peer=bot,
-            bot=bot,
+            peer=bot_entity,   # Yahan entity pass karni hoti hai, username nahi
+            bot=bot_entity,    # Yahan bhi entity
             platform="android",
             start_param="go",
-            from_bot_menu=False
+            from_bot_menu=False,
+            url="https://t.me/Nick_Bypass_Bot?startapp=go" # Link explicitly mention kiya
         ))
         
-        # Wait for the Mini App to register the "Open" event
-        await asyncio.sleep(2.5) 
+        await asyncio.sleep(2) 
 
-        async with client.conversation(TARGET_BOT, timeout=300) as conv:
-            # Step 2: Finalize by sending /start (Standard redirect behavior)
+        async with client.conversation(bot_entity, timeout=300) as conv:
+            # Step 2: Send /start to confirm authentication
             await conv.send_message("/start")
             
             # 2. START BYPASSING
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"✅ **Verification Successful!**\n`{get_progress_bar(35)}`", "parse_mode": "Markdown"
+                "text": f"✅ **Auth Success! Processing...**\n`{get_progress_bar(35)}`", "parse_mode": "Markdown"
             })
             
             await conv.send_message(user_url)
@@ -76,11 +76,9 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             # --- PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(65)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(65)}`", "parse_mode": "Markdown"
             })
-            await asyncio.sleep(1)
 
-            # Check if bot sends another message (some bots send "Processing..." first)
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -97,9 +95,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Verification was okay but no link received."
-
-            res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
+                res_msg = clean_text if clean_text else "⚠️ Bypass Failed."
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -124,4 +120,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot is Online with Correct Mini App Verification"
+def home(): return "Sandi Bot is Online"
