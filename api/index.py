@@ -34,7 +34,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     # 1. INITIAL STATUS
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"⏳ **Authenticating with Mini App...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Launching Mini App Auth...**\n`{get_progress_bar(10)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -44,32 +44,29 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- NEW STABLE MINI APP AUTHENTICATION ---
+        # --- FIXED MINI APP TRIGGER LOGIC ---
         bot = await client.get_input_entity(TARGET_BOT)
         
-        # Method 1: Get Bot App Info (Validates the Mini App Link)
-        app_info = await client(functions.messages.GetBotAppRequest(
-            app=types.InputBotAppShortName(bot_id=bot, short_name="go"),
-            hash=0
-        ))
-        
-        # Method 2: Request WebView with proper Android Platform (Simulates 'startapp=go')
-        # Isse Nick Bot ko device/hardware parameters chale jate hain
-        await client(functions.messages.RequestAppWebViewRequest(
+        # Simulating the click on: https://t.me/Nick_Bypass_Bot?startapp=go
+        # RequestWebViewRequest is the correct way to trigger 'startapp' parameters
+        await client(functions.messages.RequestWebViewRequest(
             peer=bot,
-            app=types.InputBotAppShortName(bot_id=bot, short_name="go"),
+            bot=bot,
             platform="android",
-            start_param="go",
-            write_allowed=True
+            start_param="go", # This handles the 'startapp=go' part
+            from_bot_menu=False
         ))
         
-        await asyncio.sleep(3) # Nick Bot ko session update karne ka time dena
+        await asyncio.sleep(2) # Wait for redirect simulation
 
+        # Now immediately send /start to finalize verification as per Nick Bot flow
         async with client.conversation(TARGET_BOT, timeout=300) as conv:
+            await conv.send_message("/start")
+            
             # 2. START BYPASSING
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Processing...**\n`{get_progress_bar(25)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Verification Done. Processing...**\n`{get_progress_bar(30)}`", "parse_mode": "Markdown"
             })
             
             await conv.send_message(user_url)
@@ -78,14 +75,9 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             # --- PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
-
-            bot_request(token, "editMessageText", {
-                "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
-            })
 
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
@@ -130,4 +122,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot is Online with Mini App Auth"
+def home(): return "Sandi Bot is Online with Correct Mini App Verification"
