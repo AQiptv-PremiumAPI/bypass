@@ -31,10 +31,10 @@ def get_progress_bar(percent):
     return f"[{bar}] {percent}%"
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. INITIAL STATUS
+    # 1. PEHLA STATUS
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"⏳ **Authenticating Session...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Opening Mini App Verification...**\n`{get_progress_bar(5)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -44,40 +44,40 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- FIXED MINI APP VERIFICATION (No more BOT_APP_SHORTNAME_INVALID) ---
-        async with client.conversation(TARGET_BOT, timeout=300) as conv:
-            # Hum /start go bhejenge jo direct verification trigger karta hai
-            await conv.send_message("/start go")
-            auth_msg = await conv.get_response()
-            
-            # Agar message mein Inline Button hai (Mini App wala), toh usey click karenge
-            if auth_msg.reply_markup:
-                # Ye Nick Bot ke 'Verify' ya 'Go' button ko click karega jo webview trigger karta hai
-                await auth_msg.click(0) 
-                await asyncio.sleep(3) # Nick Bot ko session register karne ka time dena
+        # --- YE SECTION HAR BAAR MINI APP LINK (startapp=go) PAR JAYEGA ---
+        bot_peer = await client.get_input_entity(TARGET_BOT)
+        
+        # Simulating clicking the link: https://t.me/Nick_Bypass_Bot?startapp=go
+        # Isse bot ko signal mil jayega ki aapne app open kar liya hai
+        await client(functions.messages.RequestAppWebViewRequest(
+            peer=bot_peer,
+            app=types.InputBotAppShortName(bot_id=bot_peer, short_name="go"),
+            platform="android",
+            start_param="go",
+            write_allowed=True
+        ))
+        
+        # Nick Bot ko verify karne ka time dene ke liye thoda wait
+        await asyncio.sleep(3) 
 
-            # 2. START BYPASSING
+        async with client.conversation(TARGET_BOT, timeout=300) as conv:
+            # 2. BYPASS START KARO
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Processing...**\n`{get_progress_bar(25)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Verification Done. Bypassing Link...**\n`{get_progress_bar(30)}`", 
+                "parse_mode": "Markdown"
             })
             
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- PROGRESS ANIMATION ---
+            # --- SMOOTH PROGRESS ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting Data...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
 
-            bot_request(token, "editMessageText", {
-                "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
-            })
-
-            # Check if result is already in the first response or wait for next
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -94,7 +94,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Please try again."
+                res_msg = clean_text if clean_text else "⚠️ Verification success but bypass failed."
 
             res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
 
@@ -121,4 +121,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot is Online with Stable Authentication"
+def home(): return "Sandi Bot with Auto Mini-App Verification is Live"
