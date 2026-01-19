@@ -44,29 +44,30 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- FIXED MINI APP TRIGGER LOGIC ---
+        # --- FIXED MINI APP AUTH LOGIC (https://t.me/Nick_Bypass_Bot?startapp=go) ---
         bot = await client.get_input_entity(TARGET_BOT)
         
-        # Simulating the click on: https://t.me/Nick_Bypass_Bot?startapp=go
-        # RequestWebViewRequest is the correct way to trigger 'startapp' parameters
+        # Step 1: Request WebView (This is what happens when you click startapp=go)
+        # It sends the 'go' parameter to the bot's mini app system
         await client(functions.messages.RequestWebViewRequest(
             peer=bot,
             bot=bot,
             platform="android",
-            start_param="go", # This handles the 'startapp=go' part
+            start_param="go",
             from_bot_menu=False
         ))
         
-        await asyncio.sleep(2) # Wait for redirect simulation
+        # Wait for the Mini App to register the "Open" event
+        await asyncio.sleep(2.5) 
 
-        # Now immediately send /start to finalize verification as per Nick Bot flow
         async with client.conversation(TARGET_BOT, timeout=300) as conv:
+            # Step 2: Finalize by sending /start (Standard redirect behavior)
             await conv.send_message("/start")
             
             # 2. START BYPASSING
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Verification Done. Processing...**\n`{get_progress_bar(30)}`", "parse_mode": "Markdown"
+                "text": f"✅ **Verification Successful!**\n`{get_progress_bar(35)}`", "parse_mode": "Markdown"
             })
             
             await conv.send_message(user_url)
@@ -75,10 +76,11 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             # --- PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(65)}`", "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
 
+            # Check if bot sends another message (some bots send "Processing..." first)
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -95,7 +97,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Please try again."
+                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Verification was okay but no link received."
 
             res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
 
