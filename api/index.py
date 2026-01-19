@@ -12,8 +12,10 @@ app = Flask(__name__)
 # --- CONFIG ---
 API_ID = 39707299
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
+# Make sure this String Session is fresh
 STRING_SESSION = "1BVtsOK0Buy2Axso-fI5CfSyMqHiK_P9ew-fP-PXrLs0gSRdXVv2hADcvnqoDp-ECKh5A0sy-IRnHefoH0bHgU3OlwpKYxiqB1hw6jUMIbgEbZplCTPlvoccvoxfZfXL9d_cZVcEch6m3Svs0DrAV4doqUMAmkgAXQHq-i84Nms-d-sGwMfuxf0R6npCtZyxzMPUGD5ODrwORywAm_Z_f1x2WvhHrIYKi5R1CXLzL2Zl56ylNot5eOKR-JXNoybuJYaQNuLtCxZ5OR875Zd9uXmeUQkhogp-xUMwbdcTyKMYZ_fhghilGuQhRJAaZYGXBJGTglf5uBRW_vuTbEuDn1tcc62QZrGU="
 TARGET_BOT = "@nick_bypass_bot"
+AUTH_LINK = "https://t.me/Nick_Bypass_Bot?startapp=go"
 
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
@@ -31,10 +33,9 @@ def get_progress_bar(percent):
     return f"[{bar}] {percent}%"
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. INITIAL STATUS
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"⏳ **Authenticating Session...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Launching Mini App Auth...**\n`{get_progress_bar(10)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -44,41 +45,42 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- STABLE MINI APP AUTH (https://t.me/Nick_Bypass_Bot?startapp=go) ---
+        # --- ADVANCED AUTHENTICATION LOGIC ---
         bot_entity = await client.get_input_entity(TARGET_BOT)
         
-        # Step 1: Triggering the Mini App backend (Simulation)
-        # We removed the 'url' parameter to fix "The URL used was invalid" error.
+        # 1. Simulating link hit (Backend hit for startapp=go)
+        # Using RequestWebView instead of GetBotApp to avoid ShortName error
         await client(functions.messages.RequestWebViewRequest(
             peer=bot_entity,
             bot=bot_entity,
             platform="android",
-            start_param="go", # This is the magic part for startapp=go
+            start_param="go", # This is the 'go' from startapp=go
             from_bot_menu=False
         ))
         
+        # 2. Wait for Nick Bot to register the app open
         await asyncio.sleep(2) 
 
-        async with client.conversation(bot_entity, timeout=300) as conv:
-            # Step 2: Sending /start as required after mini app trigger
+        # 3. Finalize redirect by sending /start automatically
+        async with client.conversation(TARGET_BOT, timeout=300) as conv:
             await conv.send_message("/start")
             
-            # 2. START BYPASSING
+            # --- START BYPASSING ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"✅ **Auth Done! Bypassing...**\n`{get_progress_bar(30)}`", "parse_mode": "Markdown"
+                "text": f"✅ **Auth Success! Processing...**\n`{get_progress_bar(30)}`", 
+                "parse_mode": "Markdown"
             })
             
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting Results...**\n`{get_progress_bar(65)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(60)}`", "parse_mode": "Markdown"
             })
-            await asyncio.sleep(1)
 
+            # Wait for link if bot sends processing message first
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -95,7 +97,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text if clean_text else "⚠️ Bypass Failed."
+                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Please check link."
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -120,4 +122,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot is Online & Authenticated"
+def home(): return "Sandi Bot is Online with Full Mini App Simulation"
