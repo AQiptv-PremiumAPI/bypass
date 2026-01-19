@@ -44,19 +44,18 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
-        # --- MINI APP VERIFICATION TRIGGER ---
-        # Yeh part https://t.me/Nick_Bypass_Bot?startapp=go ko backend se open karta hai
-        bot_entity = await client.get_input_entity(TARGET_BOT)
-        await client(functions.messages.RequestAppWebViewRequest(
-            peer=bot_entity,
-            app=types.InputBotAppShortName(bot_id=bot_entity, short_name="go"),
-            platform="android",
-            start_param="go"
-        ))
-        # Wait small time to let verification register
-        await asyncio.sleep(2) 
-
+        # --- FIXED MINI APP VERIFICATION (No more BOT_APP_SHORTNAME_INVALID) ---
         async with client.conversation(TARGET_BOT, timeout=300) as conv:
+            # Hum /start go bhejenge jo direct verification trigger karta hai
+            await conv.send_message("/start go")
+            auth_msg = await conv.get_response()
+            
+            # Agar message mein Inline Button hai (Mini App wala), toh usey click karenge
+            if auth_msg.reply_markup:
+                # Ye Nick Bot ke 'Verify' ya 'Go' button ko click karega jo webview trigger karta hai
+                await auth_msg.click(0) 
+                await asyncio.sleep(3) # Nick Bot ko session register karne ka time dena
+
             # 2. START BYPASSING
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -97,7 +96,6 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             else:
                 res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Please try again."
 
-            # Final Branding Clean
             res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
 
             bot_request(token, "editMessageText", {
@@ -115,11 +113,6 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 def webhook(idx):
     data = request.get_json()
     token = TOKENS[idx]
-    
-    # Callback handling (if any legacy buttons exist)
-    if "callback_query" in data:
-        return "ok", 200
-
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         urls = re.findall(r'https?://[^\s]+', msg["text"])
@@ -128,4 +121,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot is Online with Auto Mini-App Verification"
+def home(): return "Sandi Bot is Online with Stable Authentication"
