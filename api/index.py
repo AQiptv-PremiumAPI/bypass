@@ -13,7 +13,7 @@ app = Flask(__name__)
 API_ID = 39707299
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 STRING_SESSION = "1BVtsOK0Buy2Axso-fI5CfSyMqHiK_P9ew-fP-PXrLs0gSRdXVv2hADcvnqoDp-ECKh5A0sy-IRnHefoH0bHgU3OlwpKYxiqB1hw6jUMIbgEbZplCTPlvoccvoxfZfXL9d_cZVcEch6m3Svs0DrAV4doqUMAmkgAXQHq-i84Nms-d-sGwMfuxf0R6npCtZyxzMPUGD5ODrwORywAm_Z_f1x2WvhHrIYKi5R1CXLzL2Zl56ylNot5eOKR-JXNoybuJYaQNuLtCxZ5OR875Zd9uXmeUQkhogp-xUMwbdcTyKMYZ_fhghilGuQhRJAaZYGXBJGTglf5uBRW_vuTbEuDn1tcc62QZrGU="
-TARGET_BOT = "@nick_bypass_bot"
+TARGET_BOT = "nick_bypass_bot" # Username without @ for entity fetch
 
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
@@ -28,69 +28,73 @@ def get_progress_bar(percent):
     return f"[{'■' * done}{'□' * (10 - done)}] {percent}%"
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. INITIAL STATUS
-    status_msg = bot_request(token, "sendMessage", {
+    # INITIAL STATUS
+    status_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"🎭 **Simulating Human Interaction...**\n`{get_progress_bar(10)}`",
+        "text": f"⏳ **Launching Mini App (Human Simulation)...**\n`{get_progress_bar(15)}`",
         "reply_to_message_id": message_id, "parse_mode": "Markdown"
     }).json()
-    p_id = status_msg.get("result", {}).get("message_id")
+    p_id = status_resp.get("result", {}).get("message_id")
 
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-    await client.start()
+    await client.connect()
     
     try:
-        # --- HUMAN SIMULATION START ---
-        bot = await client.get_input_entity(TARGET_BOT)
+        # 1. GET FULL BOT ENTITY (Fixes "Not a valid bot" error)
+        # Isse Telegram ko bot ki ID aur Access Hash mil jati hai
+        bot = await client.get_entity(TARGET_BOT)
         
-        # Step 1: Open Mini App (startapp=go)
-        # Isse Telegram ke backend ko signal jayega ki user ne App Page khola hai
+        # 2. SIMULATE CLICKING: https://t.me/Nick_Bypass_Bot?startapp=go
+        # Hum RequestWebViewRequest use karenge jo 'startapp' parameters handle karta hai
         await client(functions.messages.RequestWebViewRequest(
             peer=bot,
             bot=bot,
             platform="android",
-            start_param="go",
+            start_param="go", # Ye 'go' wahi hai jo startapp=go mein hai
             from_bot_menu=False
         ))
         
-        # Step 2: "Stay" on Mini App Page (Human behavior)
-        # Hum 5-8 seconds tak rukenge taaki Nick Bot ko lage ki user ad dekh raha hai/page load kar raha hai
-        wait_time = random.randint(5, 8)
+        # 3. HUMAN WAIT (Page loading simulation)
+        # 5-8 seconds rukna zaroori hai taaki Nick Bot ko lage ki koi real user hai
+        wait_time = random.randint(6, 9)
         bot_request(token, "editMessageText", {
             "chat_id": chat_id, "message_id": p_id,
-            "text": f"⏳ **Staying on Mini App for {wait_time}s...**\n`{get_progress_bar(25)}`", "parse_mode": "Markdown"
+            "text": f"⏳ **Verifying on Mini App Page ({wait_time}s)...**\n`{get_progress_bar(40)}`", 
+            "parse_mode": "Markdown"
         })
         await asyncio.sleep(wait_time)
 
-        # Step 3: Send /start to finalize (Finalizing human action)
-        async with client.conversation(TARGET_BOT, timeout=300) as conv:
+        # 4. SEND /START (Finalizing the flow)
+        async with client.conversation(bot, timeout=300) as conv:
             await conv.send_message("/start")
             
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"✅ **Verification Done! Bypassing...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
+                "text": f"✅ **Verification Success! Bypassing...**\n`{get_progress_bar(65)}`", 
+                "parse_mode": "Markdown"
             })
             
-            # Step 4: Send the actual URL
+            # 5. SEND THE LINK
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- EXTRACTING RESULTS ---
+            # Wait for second response if bot sends "Processing" first
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
+            # CLEANING AND SENDING RESULT
             raw_text = response.text or ""
             urls = re.findall(r'https?://[^\s]+', raw_text)
 
             if len(urls) >= 2:
-                res_msg = f"✅ **SUCCESS!**\n\n**Original:** {urls[0]}\n**Bypassed:** {urls[1]}"
+                final_text = f"✅ **BYPASS COMPLETED**\n\n**Original:** {urls[0]}\n**Bypassed:** {urls[1]}"
             else:
-                clean_text = re.sub(r'(?i)Powered By.*|@\w+', '', raw_text).strip()
-                res_msg = clean_text if clean_text else "⚠️ Bypass Failed."
+                final_text = re.sub(r'(?i)Powered By.*|@\w+', '', raw_text).strip()
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": res_msg, "parse_mode": "Markdown", "disable_web_page_preview": True
+                "text": final_text if final_text else "⚠️ Bypass Failed.",
+                "parse_mode": "Markdown", "disable_web_page_preview": True
             })
 
     except Exception as e:
@@ -110,4 +114,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot Human-Simulation is Active"
+def home(): return "Sandi Bot is Online"
