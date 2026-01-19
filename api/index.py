@@ -4,7 +4,7 @@ import requests
 import re
 import io
 from flask import Flask, request
-from telethon import TelegramClient
+from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
 
 app = Flask(__name__)
@@ -30,16 +30,11 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
-async def solve_remote(btn_text):
-    async with TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH) as client:
-        msgs = await client.get_messages(TARGET_BOT, limit=1)
-        if msgs and msgs[0].reply_markup:
-            await msgs[0].click(text=btn_text)
-
 async def handle_bypass(token, chat_id, message_id, user_url):
+    # 1. INITIAL STATUS
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
-        "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
+        "text": f"⏳ **Authenticating Session...**\n`{get_progress_bar(10)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
@@ -49,65 +44,47 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     await client.start()
     
     try:
+        # --- MINI APP VERIFICATION TRIGGER ---
+        # Yeh part https://t.me/Nick_Bypass_Bot?startapp=go ko backend se open karta hai
+        bot_entity = await client.get_input_entity(TARGET_BOT)
+        await client(functions.messages.RequestAppWebViewRequest(
+            peer=bot_entity,
+            app=types.InputBotAppShortName(bot_id=bot_entity, short_name="go"),
+            platform="android",
+            start_param="go"
+        ))
+        # Wait small time to let verification register
+        await asyncio.sleep(2) 
+
         async with client.conversation(TARGET_BOT, timeout=300) as conv:
+            # 2. START BYPASSING
+            bot_request(token, "editMessageText", {
+                "chat_id": chat_id, "message_id": p_id,
+                "text": f"⏳ **Processing...**\n`{get_progress_bar(25)}`", "parse_mode": "Markdown"
+            })
+            
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            if response.photo or "Human Verification" in (response.text or ""):
-                bot_request(token, "deleteMessage", {"chat_id": chat_id, "message_id": p_id})
-                
-                img_data = io.BytesIO()
-                await client.download_media(response.photo, file=img_data)
-                img_data.seek(0)
-
-                kb = []
-                if response.reply_markup:
-                    for row in response.reply_markup.rows:
-                        kb.append([{'text': b.text, 'callback_data': f"solve_{b.text}"} for b in row.buttons])
-
-                cap_resp = bot_request(token, "sendPhoto", {
-                    'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\n⏳ Valid for 15 minutes",
-                    'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
-                }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
-                cap_id = cap_resp.get("result", {}).get("message_id")
-
-                verified = False
-                for _ in range(150):
-                    await asyncio.sleep(1.5)
-                    last = await client.get_messages(TARGET_BOT, limit=1)
-                    msg_text = last[0].text or ""
-                    
-                    if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
-                        verified = True
-                        bot_request(token, "editMessageCaption", {
-                            "chat_id": chat_id, "message_id": cap_id,
-                            "caption": "✅ Captcha Verification Successful!",
-                            "reply_markup": '{"inline_keyboard": []}'
-                        })
-                        await conv.send_message(user_url)
-                        response = await conv.get_response()
-                        break
-                if not verified: return
-
+            # --- PROGRESS ANIMATION ---
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Extracting...**\n`{get_progress_bar(50)}`", "parse_mode": "Markdown"
             })
             await asyncio.sleep(1)
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"
             })
 
+            # Check if result is already in the first response or wait for next
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
-            # --- CLEANING LOGIC START ---
+            # --- CLEANING LOGIC ---
             raw_text = response.text or ""
-            # Branding patterns remove karne ke liye
-            clean_text = re.sub(r'(?i)Powered By\s*@\w+', '', raw_text) # Removes "Powered By @any_bot"
+            clean_text = re.sub(r'(?i)Powered By\s*@\w+', '', raw_text)
             clean_text = clean_text.replace("@Nick_Bypass_Bot", "").replace("@riobypassbot", "").strip()
 
             urls = re.findall(r'https?://[^\s]+', raw_text)
@@ -118,11 +95,10 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text
+                res_msg = clean_text if clean_text else "⚠️ Bypass Failed. Please try again."
 
-            # Final check to ensure no branding remains
+            # Final Branding Clean
             res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
-            # --- CLEANING LOGIC END ---
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -139,11 +115,11 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 def webhook(idx):
     data = request.get_json()
     token = TOKENS[idx]
+    
+    # Callback handling (if any legacy buttons exist)
     if "callback_query" in data:
-        btn = data["callback_query"]["data"].split("_")[1]
-        asyncio.run(solve_remote(btn))
-        bot_request(token, "answerCallbackQuery", {"callback_query_id": data["callback_query"]["id"], "text": "Verifying..."})
         return "ok", 200
+
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         urls = re.findall(r'https?://[^\s]+', msg["text"])
@@ -152,4 +128,4 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot with Auto-Captcha & Smooth Progress is Live"
+def home(): return "Sandi Bot is Online with Auto Mini-App Verification"
