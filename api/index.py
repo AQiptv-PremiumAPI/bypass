@@ -4,7 +4,7 @@ import requests
 import re
 import io
 from flask import Flask, request
-from telethon import TelegramClient, functions
+from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
 
 app = Flask(__name__)
@@ -83,36 +83,35 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                             break
                     if not verified: return
 
-            # --- CASE 2: MINI APP BYPASS (FIXED) ---
+            # --- CASE 2: MINI APP BYPASS (ENHANCED) ---
             if "Open The Mini App" in (response.text or ""):
-                bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": "🛡️ **Emulating Mini App Session...**", "parse_mode": "Markdown"})
+                bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": "🛡️ **Opening Mini App...**", "parse_mode": "Markdown"})
                 
                 if response.reply_markup:
-                    # User-bot simulate karega Mini App open karne ka request
                     try:
-                        app_button = response.reply_markup.rows[0].buttons[0]
-                        # Ye niche wali line bot ko signal degi ki App "Open" ho gayi hai
-                        await client(functions.messages.RequestWebViewRequest(
+                        # Emulating the App Click logic
+                        await response.click(0) # Standard click first
+                        
+                        # Full WebView Request to notify the bot that App is "Running"
+                        await client(functions.messages.RequestAppWebViewRequest(
                             peer=TARGET_BOT,
-                            bot=TARGET_BOT,
-                            platform='android',
-                            url=app_button.url if hasattr(app_button, 'url') else None,
-                            from_bot_menu=False
+                            app=types.InputBotAppShortName(bot_id=await client.get_input_entity(TARGET_BOT), short_name="verify"), # Assuming 'verify' is the app name
+                            platform='android'
                         ))
-                    except Exception as web_err:
-                        # Agar WebView fail ho toh normal click try karega
+                    except:
+                        # Fallback for older bot versions
                         await response.click(0)
 
-                    # Bot ko refresh hone ka time dena (Nick Bot 5-10 sec leta hai verify karne mein)
                     verified = False
-                    for _ in range(25): # 50 seconds tak wait karega
+                    for _ in range(30): # 60 seconds wait
                         await asyncio.sleep(2)
                         last_msgs = await client.get_messages(TARGET_BOT, limit=1)
                         check_text = last_msgs[0].text or ""
                         
-                        # Agar bot 'Successful' bol de ya khud link bhej de
+                        # Nick Bot checks
                         if any(x in check_text for x in ["Successful", "Processing", "https"]):
                             verified = True
+                            # If verified but link not sent yet, re-send original link
                             if "https" not in check_text:
                                 await conv.send_message(user_url)
                                 response = await conv.get_response()
@@ -121,11 +120,12 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                             break
                     
                     if not verified:
-                        raise Exception("Mini App verification timed out. Bot is not responding to app trigger.")
+                        raise Exception("Nick Bot verification failed. Please check if the bot is down or session is limited.")
 
             # --- FINAL STEP: EXTRACTION ---
-            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⏳ **Extracting...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"})
+            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⏳ **Extracting...**\n`{get_progress_bar(80)}`", "parse_mode": "Markdown"})
             
+            # Ensure we have the message with URL
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
@@ -164,7 +164,7 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Bot is Live with Fixed Mini App Logic"
+def home(): return "Sandi Bot Live"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
