@@ -4,7 +4,7 @@ import requests
 import re
 import io
 from flask import Flask, request
-from telethon import TelegramClient
+from telethon import TelegramClient, functions
 from telethon.sessions import StringSession
 
 app = Flask(__name__)
@@ -53,22 +53,20 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- CASE 1: IMAGE CAPTCHA VERIFICATION ---
+            # --- CASE 1: IMAGE CAPTCHA ---
             if response.photo or "Human Verification Required" in (response.text or ""):
                 if response.photo:
                     bot_request(token, "deleteMessage", {"chat_id": chat_id, "message_id": p_id})
                     img_data = io.BytesIO()
                     await client.download_media(response.photo, file=img_data)
                     img_data.seek(0)
-
                     kb = []
                     if response.reply_markup:
                         for row in response.reply_markup.rows:
                             kb.append([{'text': b.text, 'callback_data': f"solve_{b.text}"} for b in row.buttons])
-
                     cap_resp = bot_request(token, "sendPhoto", {
                         'chat_id': chat_id,
-                        'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\n⏳ Valid for 15 minutes",
+                        'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle",
                         'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                     }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
                     cap_id = cap_resp.get("result", {}).get("message_id")
@@ -77,68 +75,67 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                     for _ in range(150):
                         await asyncio.sleep(1.5)
                         last = await client.get_messages(TARGET_BOT, limit=1)
-                        msg_text = last[0].text or ""
-                        if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
+                        if any(x in (last[0].text or "") for x in ["Successful", "Processing", "https"]):
                             verified = True
-                            bot_request(token, "editMessageCaption", {
-                                "chat_id": chat_id, "message_id": cap_id,
-                                "caption": "✅ Captcha Verification Successful!",
-                                "reply_markup": '{"inline_keyboard": []}'
-                            })
+                            bot_request(token, "editMessageCaption", {"chat_id": chat_id, "message_id": cap_id, "caption": "✅ Verified!"})
                             await conv.send_message(user_url)
                             response = await conv.get_response()
                             break
                     if not verified: return
 
-            # --- CASE 2: MINI APP AUTO-BYPASS ---
+            # --- CASE 2: MINI APP BYPASS (FIXED) ---
             if "Open The Mini App" in (response.text or ""):
+                bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": "🛡️ **Emulating Mini App Session...**", "parse_mode": "Markdown"})
+                
                 if response.reply_markup:
-                    # User bot automatically clicks the button to trigger verification
-                    await response.click(0) 
-                    bot_request(token, "editMessageText", {
-                        "chat_id": chat_id, "message_id": p_id,
-                        "text": "🛡️ **Mini App Verification in progress...**",
-                        "parse_mode": "Markdown"
-                    })
-                    
+                    # User-bot simulate karega Mini App open karne ka request
+                    try:
+                        app_button = response.reply_markup.rows[0].buttons[0]
+                        # Ye niche wali line bot ko signal degi ki App "Open" ho gayi hai
+                        await client(functions.messages.RequestWebViewRequest(
+                            peer=TARGET_BOT,
+                            bot=TARGET_BOT,
+                            platform='android',
+                            url=app_button.url if hasattr(app_button, 'url') else None,
+                            from_bot_menu=False
+                        ))
+                    except Exception as web_err:
+                        # Agar WebView fail ho toh normal click try karega
+                        await response.click(0)
+
+                    # Bot ko refresh hone ka time dena (Nick Bot 5-10 sec leta hai verify karne mein)
                     verified = False
-                    for _ in range(15): # Wait for 30 seconds max
+                    for _ in range(25): # 50 seconds tak wait karega
                         await asyncio.sleep(2)
                         last_msgs = await client.get_messages(TARGET_BOT, limit=1)
                         check_text = last_msgs[0].text or ""
-                        if "Verification Successful" in check_text or "Processing" in check_text:
+                        
+                        # Agar bot 'Successful' bol de ya khud link bhej de
+                        if any(x in check_text for x in ["Successful", "Processing", "https"]):
                             verified = True
-                            await conv.send_message(user_url)
-                            response = await conv.get_response()
+                            if "https" not in check_text:
+                                await conv.send_message(user_url)
+                                response = await conv.get_response()
+                            else:
+                                response = last_msgs[0]
                             break
+                    
                     if not verified:
-                        raise Exception("Mini App verification timed out.")
+                        raise Exception("Mini App verification timed out. Bot is not responding to app trigger.")
 
-            # --- FINAL STEP: EXTRACTION & CLEANING ---
-            bot_request(token, "editMessageText", {
-                "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
-            })
+            # --- FINAL STEP: EXTRACTION ---
+            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⏳ **Extracting...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"})
             
-            # Wait for final result link
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
             raw_text = response.text or ""
-            clean_text = re.sub(r'(?i)Powered By\s*@\w+', '', raw_text)
-            clean_text = clean_text.replace("@Nick_Bypass_Bot", "").replace("@riobypassbot", "").strip()
-
             urls = re.findall(r'https?://[^\s]+', raw_text)
+            
             if len(urls) >= 2:
-                bot_request(token, "editMessageText", {
-                    "chat_id": chat_id, "message_id": p_id,
-                    "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
-                })
                 res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
             else:
-                res_msg = clean_text
-
-            res_msg = re.sub(r'(?i)Powered By.*', '', res_msg).strip()
+                res_msg = re.sub(r'(?i)Powered By.*|@\w+', '', raw_text).strip()
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -158,7 +155,6 @@ def webhook(idx):
     if "callback_query" in data:
         btn = data["callback_query"]["data"].split("_")[1]
         asyncio.run(solve_remote(btn))
-        bot_request(token, "answerCallbackQuery", {"callback_query_id": data["callback_query"]["id"], "text": "Verifying..."})
         return "ok", 200
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
@@ -168,7 +164,7 @@ def webhook(idx):
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot with Auto-Captcha & Mini-App Bypass is Live"
+def home(): return "Bot is Live with Fixed Mini App Logic"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
