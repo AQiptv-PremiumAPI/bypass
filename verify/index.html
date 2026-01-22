@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RioTV Bypass Verification</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { background: #0e1621; color: white; font-family: sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: #17212b; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 80%; }
+        .header { font-size: 24px; font-weight: bold; color: #2481cc; margin-bottom: 10px; }
+        .sub { color: #808d99; margin-bottom: 25px; }
+        .btn { background: #2481cc; border: none; padding: 15px 40px; color: white; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">RioTV Bypass Bot</div>
+        <p class="sub">Human Verification Required</p>
+        <button class="btn" onclick="startProcess()">CLICK TO VERIFY</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        function startProcess() {
+            // Nick Bot ka actual link trigger hoga backend ke through
+            // Hum Telegram ko signal bhejte hain ki verification start karo
+            window.location.href = "https://t.me/Nick_Bypass_Bot?startapp=go";
+        }
+    </script>
+</body>
+</html>
