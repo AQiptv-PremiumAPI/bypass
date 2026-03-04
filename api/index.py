@@ -12,17 +12,18 @@ app = Flask(__name__)
 # --- CONFIG ---
 API_ID = 39707299
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
+# Make sure this session is valid and authorized
 STRING_SESSION = "1BVtsOL0Bu53itjhCEqeLVhMJR8lAoN8lcsfm9fr3Snhw_pDLKv-l-uYOxBSh08CmjlvAohLi6A99TAJwEhS8ty-3GUqqKstUY9GncNLqpES9pd4lCxN-gnPQEe6WUHj9hJGO9Z-U39Msrt21xu-cPB-nI2FFHf2Cmgo_3nwB59zH8JzRKy4ceBRSVsaM_khK3-mMDmRfld-cLPtNs1t2vQ3I6JzUXER4yznCaW9-UXCHa4IDimIEcWKeKkHlPFbtwcLxFr7RWf-cA5mJB1CWB9NM1pKSe0SnY_hFDn-wgn54A25cQK72jmoJn74U1FJ94KFEPmplV_zwWgaFk3CeitwSszPK2mg="
 TARGET_BOT = "@nick_bypass_bot"
 
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
 
-def bot_request(token, method, payload, files=None):
+def bot_request(token, method, payload=None, files=None):
     url = f"https://api.telegram.org/bot{token}/{method}"
     try:
-        if files: return requests.post(url, data=payload, files=files, timeout=15)
-        return requests.post(url, json=payload, timeout=15)
+        if files: return requests.post(url, data=payload, files=files, timeout=10)
+        return requests.post(url, json=payload, timeout=10)
     except: return None
 
 def get_progress_bar(percent):
@@ -30,33 +31,28 @@ def get_progress_bar(percent):
     bar = "■" * done + "□" * (10 - done)
     return f"[{bar}] {percent}%"
 
-async def solve_remote(btn_text):
-    async with TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH) as client:
-        msgs = await client.get_messages(TARGET_BOT, limit=1)
-        if msgs and msgs[0].reply_markup:
-            await msgs[0].click(text=btn_text)
-
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. ALWAYS SHOW PROCESSING FIRST
-    initial_resp = bot_request(token, "sendMessage", {
+    # Initial Message
+    resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
         "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
-    }).json()
-    p_id = initial_resp.get("result", {}).get("message_id")
+    })
+    
+    if not resp or not resp.json().get("ok"): return
+    p_id = resp.json()["result"]["message_id"]
 
     client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
     await client.start()
     
     try:
-        async with client.conversation(TARGET_BOT, timeout=300) as conv:
+        async with client.conversation(TARGET_BOT, timeout=120) as conv:
             await conv.send_message(user_url)
             response = await conv.get_response()
 
-            # --- CHECK FOR CAPTCHA ---
+            # Captcha Logic
             if response.photo or "Human Verification" in (response.text or ""):
-                # [POINT 1] DELETE PROCESSING MESSAGE IMMEDIATELY
                 bot_request(token, "deleteMessage", {"chat_id": chat_id, "message_id": p_id})
                 
                 img_data = io.BytesIO()
@@ -68,65 +64,40 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                     for row in response.reply_markup.rows:
                         kb.append([{'text': b.text, 'callback_data': f"solve_{b.text}"} for b in row.buttons])
 
-                # Send Captcha
                 cap_resp = bot_request(token, "sendPhoto", {
                     'chat_id': chat_id,
-                    'caption': "🔐 Human Verification Required\n\n👉 Click the character inside the circle\nValid for 15 minutes",
+                    'caption': "🔐 **Human Verification Required**\n\nClick the correct button below.",
                     'reply_markup': str({'inline_keyboard': kb}).replace("'", '"')
                 }, files={'photo': ('captcha.jpg', img_data, 'image/jpeg')}).json()
+                
                 cap_id = cap_resp.get("result", {}).get("message_id")
 
                 # Wait for Success
                 verified = False
-                for _ in range(150):
-                    await asyncio.sleep(1.5)
-                    last = await client.get_messages(TARGET_BOT, limit=1)
-                    msg_text = last[0].text or ""
-                    
-                    if "Verification Successful" in msg_text or "Processing" in msg_text or "https" in msg_text:
+                for _ in range(30): # Reduced wait for Vercel limits
+                    await asyncio.sleep(2)
+                    last_msgs = await client.get_messages(TARGET_BOT, limit=1)
+                    if last_msgs and ("Successful" in (last_msgs[0].text or "") or "http" in (last_msgs[0].text or "")):
                         verified = True
-                        
-                        # [POINT 2] UPDATE CAPTCHA MSG: REMOVE BUTTONS & SHOW SUCCESS
                         bot_request(token, "editMessageCaption", {
                             "chat_id": chat_id, "message_id": cap_id,
-                            "caption": "✅ Captcha Verification Successful!",
+                            "caption": "✅ **Verification Successful!**",
                             "reply_markup": '{"inline_keyboard": []}'
                         })
-                        
-                        # Verification success ke baad link ko ak bar piche se submit karega
+                        # Re-send URL after verification
                         await conv.send_message(user_url)
                         response = await conv.get_response()
                         break
                 if not verified: return
 
-            # --- START PROGRESS ANIMATION ---
-            # Extracting (40%)
+            # Final result extraction
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Extracting...**\n`{get_progress_bar(40)}`", "parse_mode": "Markdown"
-            })
-            await asyncio.sleep(1)
-
-            # Bypassing (70%)
-            bot_request(token, "editMessageText", {
-                "chat_id": chat_id, "message_id": p_id,
-                "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
+                "text": f"⏳ **Finalizing...**\n`{get_progress_bar(90)}`", "parse_mode": "Markdown"
             })
 
-            # Wait for result if not already there
-            if "https" not in (response.text or ""):
-                response = await conv.get_response()
-
-            # Completed (100%)
             urls = re.findall(r'https?://[^\s]+', response.text)
-            if len(urls) >= 2:
-                bot_request(token, "editMessageText", {
-                    "chat_id": chat_id, "message_id": p_id,
-                    "text": f"✅ **Completed!**\n`{get_progress_bar(100)}`", "parse_mode": "Markdown"
-                })
-                res_msg = f"**ORIGINAL LINK:**\n{urls[0]}\n\n**BYPASSED LINK:**\n{urls[1]}"
-            else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
+            res_msg = f"✅ **Bypass Done:**\n{urls[1] if len(urls)>1 else response.text}"
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -134,28 +105,27 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             })
 
     except Exception as e:
-        if p_id:
-            bot_request(token, "editMessageText", {"chat_id": chat_id, "message_id": p_id, "text": f"⚠️ Error: {str(e)}"})
+        bot_request(token, "sendMessage", {"chat_id": chat_id, "text": f"❌ Error: {str(e)}"})
     finally:
         await client.disconnect()
 
 @app.route('/webhook/<int:idx>', methods=['POST'])
 def webhook(idx):
+    if idx >= len(TOKENS): return "Invalid Token Index", 400
+    
     data = request.get_json()
     token = TOKENS[idx]
     
-    if "callback_query" in data:
-        btn = data["callback_query"]["data"].split("_")[1]
-        asyncio.run(solve_remote(btn))
-        bot_request(token, "answerCallbackQuery", {"callback_query_id": data["callback_query"]["id"], "text": "Verifying..."})
-        return "ok", 200
-
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         urls = re.findall(r'https?://[^\s]+', msg["text"])
         if urls:
-            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+            # Running as a task to prevent blocking
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+            
     return "ok", 200
 
 @app.route('/')
-def home(): return "Sandi Bot with Auto-Captcha & Smooth Progress is Live"
+def home(): return "RioTV Bypass API is Live"
