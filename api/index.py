@@ -2,7 +2,6 @@ import os
 import asyncio
 import requests
 import re
-import io
 from flask import Flask, request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -18,24 +17,21 @@ TARGET_BOT = "@nick_bypass_bot"
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
 
-def bot_request(token, method, payload, files=None):
+def bot_request(token, method, payload):
     url = f"https://api.telegram.org/bot{token}/{method}"
-    try:
-        if files: return requests.post(url, data=payload, files=files, timeout=15)
-        return requests.post(url, json=payload, timeout=15)
+    try: return requests.post(url, json=payload, timeout=15)
     except: return None
 
 def get_progress_bar(percent):
     done = int(percent / 10)
-    bar = "■" * done + "□" * (10 - done)
-    return f"[{bar}] {percent}%"
+    return f"[{'■' * done}{'□' * (10 - done)}] {percent}%"
 
 async def handle_bypass(token, chat_id, message_id, user_url):
-    # 1. INITIAL PROCESSING MESSAGE
+    # 1. TAG USER & START PROCESSING
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
-        "reply_to_message_id": message_id,
+        "reply_to_message_id": message_id, # Yeh user ko tag karega
         "parse_mode": "Markdown"
     }).json()
     p_id = initial_resp.get("result", {}).get("message_id")
@@ -47,7 +43,6 @@ async def handle_bypass(token, chat_id, message_id, user_url):
         async with client.conversation(TARGET_BOT, timeout=300) as conv:
             await conv.send_message(user_url)
             
-            # --- PROGRESS ANIMATION ---
             # Extracting (40%)
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
@@ -62,19 +57,15 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
             })
             
-            # If the first response doesn't have the link, wait for the next one
             if "https" not in (response.text or ""):
                 response = await conv.get_response()
 
-            # --- FINAL OUTPUT LOGIC ---
+            # Final Output extraction
             urls = re.findall(r'https?://[^\s]+', response.text)
-            
-            # If 2 links found (Original & Bypassed), take the 2nd one
             if len(urls) >= 2:
-                final_link = urls[1]
-                res_msg = f"✅ **Bypassed Ads**\n{final_link}"
+                # Sirf bypassed link copy karke forward karega
+                res_msg = f"✅ **Bypassed Ads**\n{urls[1]}"
             else:
-                # Fallback if logic changes
                 res_msg = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
 
             bot_request(token, "editMessageText", {
@@ -91,17 +82,15 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 @app.route('/webhook/<int:idx>', methods=['POST'])
 def webhook(idx):
     data = request.get_json()
-    token = TOKENS[idx]
-    
     if "message" in data and "text" in data["message"]:
         msg = data["message"]
         urls = re.findall(r'https?://[^\s]+', msg["text"])
         if urls:
-            asyncio.run(handle_bypass(token, msg["chat"]["id"], msg["message_id"], urls[0]))
+            asyncio.run(handle_bypass(TOKENS[idx], msg["chat"]["id"], msg["message_id"], urls[0]))
     return "ok", 200
 
 @app.route('/')
-def home(): return "RioTV Bypass Bot is Live"
+def home(): return "RioTV Bypass Bot is Running"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
