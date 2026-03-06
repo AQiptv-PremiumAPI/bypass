@@ -58,7 +58,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
             })
             
             # Wait for actual result if first response is just "Processing"
-            if "Bypassed Link" not in (response.text or ""):
+            if "Bypassed Link" not in (response.text or "") and "No Script Found" not in (response.text or ""):
                 try:
                     response = await conv.get_response()
                 except:
@@ -66,7 +66,13 @@ async def handle_bypass(token, chat_id, message_id, user_url):
 
             # --- UPDATED EXTRACTION LOGIC ---
             text = response.text or ""
-            if "Bypassed Link :" in text:
+            
+            if "No Script Found for:" in text:
+                # Handling the special case for unsupported scripts
+                clean_url = user_url.strip()
+                res_msg = f"⚠️ **No Script Found for:**\n\n{clean_url}"
+            
+            elif "Bypassed Link :" in text:
                 # Extract everything after "Bypassed Link :" until the next newline or separator
                 parts = text.split("Bypassed Link :")
                 result_part = parts[1].split("Time Taken")[0].split("Search Any")[0].strip()
