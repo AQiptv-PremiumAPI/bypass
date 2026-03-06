@@ -31,7 +31,7 @@ async def handle_bypass(token, chat_id, message_id, user_url):
     initial_resp = bot_request(token, "sendMessage", {
         "chat_id": chat_id, 
         "text": f"⏳ **Processing...**\n`{get_progress_bar(15)}`",
-        "reply_to_message_id": message_id, # Yeh user ko tag karega
+        "reply_to_message_id": message_id,
         "parse_mode": "Markdown"
     }).json()
     p_id = initial_resp.get("result", {}).get("message_id")
@@ -57,16 +57,29 @@ async def handle_bypass(token, chat_id, message_id, user_url):
                 "text": f"⏳ **Bypassing...**\n`{get_progress_bar(70)}`", "parse_mode": "Markdown"
             })
             
-            if "https" not in (response.text or ""):
-                response = await conv.get_response()
+            # Wait for actual result if first response is just "Processing"
+            if "Bypassed Link" not in (response.text or ""):
+                try:
+                    response = await conv.get_response()
+                except:
+                    pass
 
-            # Final Output extraction
-            urls = re.findall(r'https?://[^\s]+', response.text)
-            if len(urls) >= 2:
-                # Sirf bypassed link copy karke forward karega
-                res_msg = f"✅ **Bypassed Ads**\n{urls[1]}"
+            # --- UPDATED EXTRACTION LOGIC ---
+            text = response.text or ""
+            if "Bypassed Link :" in text:
+                # Extract everything after "Bypassed Link :" until the next newline or separator
+                parts = text.split("Bypassed Link :")
+                result_part = parts[1].split("Time Taken")[0].split("Search Any")[0].strip()
+                # Clean up the emoji ✅ if present at the start
+                result_part = result_part.replace("✅", "").strip()
+                res_msg = f"✅ **Bypassed Ads**\n`{result_part}`"
             else:
-                res_msg = response.text.replace("@Nick_Bypass_Bot", "@riobypassbot")
+                # Fallback to old URL method or plain text clean up
+                urls = re.findall(r'https?://[^\s]+', text)
+                if len(urls) >= 2:
+                    res_msg = f"✅ **Bypassed Ads**\n{urls[1]}"
+                else:
+                    res_msg = text.replace("@Nick_Bypass_Bot", "@riobypassbot")
 
             bot_request(token, "editMessageText", {
                 "chat_id": chat_id, "message_id": p_id,
