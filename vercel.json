@@ -1,14 +1,15 @@
 {
   "version": 2,
-  "cleanUrls": true,
-  "rewrites": [
+  "builds": [
     {
-      "source": "/verify",
-      "destination": "/verify/index.html"
-    },
+      "src": "index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
     {
-      "source": "/((?!verify|.*\\.html$|.*\\.js$).*)",
-      "destination": "/api/index"
+      "src": "/(.*)",
+      "dest": "index.py"
     }
   ]
 }
