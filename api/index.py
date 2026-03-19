@@ -12,7 +12,7 @@ app = Flask(__name__)
 API_ID = 39707299
 API_HASH = 'd6d90ebfeb588397f9229ac3be55cfdf'
 STRING_SESSION = "1BVtsOL0Bu7PInhUC3PWFzqTflouCeOIGJM3pCNYP3_cUnHbS0JBAWdwVZ3msRiaCDXCYDb8mYCkjm99in6fAYeHcM3GPkNks8MllhaQw8OPMzrMLkFvXmvnC8G6kdc9JZad82jZ6-7GHFGW7bZPDfH56hzC9hAhxnQvx35yfvQi3OBphr0jBAbIdgGu8Q3Oh3PRZEkyRPIFj4MRC6UQY-fTgXqE1SgtYH4RGu8hMcsWstNoyY1lmUFgVDg7l0Dmzryhs5bP3rDIbcScSLH0e999Ph0chas3N_OAJ7cVoklA6ZbWUE8Hti_N3Te2-GFQ7KjP2a3Kwmglmf5l6akmHKMN_GeFmTkU="
-TARGET_BOT = "@nick_bypass_bot"
+TARGET_BOT = "@cantrellabypassbot"
 
 RAW_TOKENS = os.environ.get('BOT_TOKEN', '')
 TOKENS = [t.strip() for t in RAW_TOKENS.split(',') if t.strip()]
